@@ -1,0 +1,16 @@
+# General settings [V4 config] - Shallow
+num_return_sequences: 5
+inference_batch_size: 10
+multiplier: 5
+
+# Parameters for generating decoding configurations
+decoding_params:
+  # Base values applied to all combinations
+  base:
+    top_k: 20
+    top_p: 0.95
+  
+  # Lists of values to combine
+  matrix:
+    temperature: [0.2, 0.7, 1.2]
+    repetition_penalty: [1.0, 1.5]
