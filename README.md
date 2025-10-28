@@ -12,7 +12,7 @@ This repository provides scripts and configurations to set up GhostFold locally 
 
 ---
 
-## 🔧 Installation
+## Installation
 
 ### 1. Install Mamba (if not already installed)
 
