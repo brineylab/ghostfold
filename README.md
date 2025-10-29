@@ -16,7 +16,7 @@ This repository provides scripts and configurations to set up GhostFold locally 
 
 ### 1. Install Mamba (if not already installed)
 
-GhostFold uses **Mamba** for virtual environment management due to its speed and reproducibility advantages over Conda.
+GhostFold uses **Mamba** for virtual environment management.
 
 You can install Mamba using one of the following methods:
 
@@ -87,6 +87,12 @@ Install the appropriate CUDA drivers for PyTorch.
 
 Refer to the [Transformers Installation Guide](https://huggingface.co/docs/transformers/installation) for platform-specific setup details.
 
+We use [Rich](https://rich.readthedocs.io/en/stable/introduction.html) for printing log messages. Install it within the environment with:
+
+```
+pip install rich
+```
+
 ---
 
 ## Hugging Face Authentication
@@ -111,7 +117,7 @@ chmod +x install_localcolabfold.sh ghostfold.sh
 Then run the installation script:
 
 ```bash
-./install_localcolabfold
+./install_localcolabfold.sh
 ```
 
 This script will:
