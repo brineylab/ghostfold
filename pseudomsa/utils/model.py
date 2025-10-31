@@ -1,7 +1,16 @@
 ### utils/model.py
 import torch
+from transformers import LogitsProcessor, LogitsProcessorList
 from transformers import PreTrainedTokenizer, PreTrainedModel
 from typing import List, Dict, Any
+
+
+class FiniteLogitsProcessor(LogitsProcessor):
+    """Ensure logits have no NaN or Inf values before sampling."""
+    def __call__(self, input_ids, scores):
+        scores = torch.nan_to_num(scores, neginf=-1e9, posinf=1e9)
+        return torch.clamp(scores, -1e9, 1e9)
+
 
 def preprocess_sequence(sequence: List[str], prefix: str) -> str:
     """
@@ -52,6 +61,8 @@ def generate_3di(
     # Calculate max_len directly based on the tokenized input's length.
     max_len = ids.input_ids.shape[1] + 1
 
+    processors = LogitsProcessorList([FiniteLogitsProcessor()])
+    
     with torch.no_grad():
         # Model generation benefits from `no_grad` for inference.
         # The `generate` method handles the actual inference on the GPU.
@@ -63,6 +74,7 @@ def generate_3di(
             num_beams=num_return_sequences*3,
             early_stopping=True,
             do_sample=True,
+            logits_processor=processors,
             **decode_conf
         )
 
@@ -109,6 +121,8 @@ def generate_aa(
 
     max_len = ids.input_ids.shape[1] + 1
 
+    processors = LogitsProcessorList([FiniteLogitsProcessor()])
+    
     with torch.no_grad():
         outputs = model.generate(
             input_ids=ids.input_ids,
@@ -118,6 +132,7 @@ def generate_aa(
             num_beams=1,
             # early_stopping=True,
             do_sample=True,
+            logits_processor=processors,
             **decode_conf
         )
 
