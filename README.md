@@ -93,6 +93,10 @@ We use [Rich](https://rich.readthedocs.io/en/stable/introduction.html) for print
 pip install rich
 ```
 
+Additionally, also install the following libraries to use GhostFold:
+```
+mamba install -c conda-forge biopython numpy matplotlib scikit-learn
+```
 ---
 
 ## Hugging Face Authentication
