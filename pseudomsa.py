@@ -226,8 +226,8 @@ def run_pipeline(
 
     try:
         console.print(f"Loading T5 model and tokenizer from '[bold cyan]{MODEL_NAME}[/bold cyan]' on [magenta]{device.type.upper()}[/magenta]...", style="bold")
-        tokenizer = T5Tokenizer.from_pretrained(MODEL_NAME, do_lower_case=False, legacy=True)
-        model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME).to(device)
+        tokenizer = T5Tokenizer.from_pretrained(MODEL_NAME, use_safetensors=True, low_cpu_mem_usage=True, dtype="auto", do_lower_case=False, legacy=True)
+        model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME, use_safetensors=True, low_cpu_mem_usage=True, dtype="auto",).to(device)
         model.eval()
         if device.type == 'cuda':
             model.half()
