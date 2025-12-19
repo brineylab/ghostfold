@@ -10,6 +10,7 @@
 
 This repository provides scripts and configurations to set up GhostFold locally using **Mamba** and **ColabFold** environments, along with integration support for **Hugging Face Transformers**.
 
+You can test the MSA generation mode out in [this Colab notebook](https://colab.research.google.com/github/rostro36/ghostfold/blob/main/GhostFold.ipynb). 
 ---
 
 ## Installation
@@ -105,7 +106,7 @@ When using `from_pretrained()` to load models, GhostFold automatically fetches p
 You may need to create and configure a Hugging Face access token. See the instructions [here](https://huggingface.co/docs/hub/security-tokens).
 
 ```bash
-huggingface-cli login
+hf auth login
 ```
 
 ---
