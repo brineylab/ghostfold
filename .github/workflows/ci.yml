@@ -1,0 +1,78 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install lint dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,test]"
+
+      - name: Run ruff
+        run: python -m ruff check src tests
+
+  tests:
+    runs-on: ubuntu-latest
+    needs: [lint]
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test]"
+
+      - name: Run pytest
+        run: python -m pytest -q
+
+  packaging-smoke:
+    runs-on: ubuntu-latest
+    needs: [tests]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build artifacts and install wheel
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+          python -m pip install dist/*.whl
+          python -m ghostfold.cli version
+          python -c "import ghostfold as g; assert hasattr(g, 'run_pipeline_workflow')"
+
+      - name: Extra resolver checks (Linux)
+        run: |
+          python -m pip install --dry-run ".[test]"
+          python -m pip install --dry-run ".[fold]"
+
+      - name: Run packaging smoke tests
+        env:
+          GHOSTFOLD_RUN_PACKAGING_SMOKE: "1"
+        run: python -m pytest -q tests/test_packaging_smoke.py

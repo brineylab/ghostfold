@@ -1,0 +1,75 @@
+[build-system]
+requires = ["hatchling>=1.25.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ghostfold"
+version = "0.1.0"
+description = "Database-free protein folding workflows from single sequences."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+  { name = "Briney Lab" }
+]
+dependencies = [
+  "biopython>=1.83",
+  "matplotlib>=3.8",
+  "numpy>=1.26",
+  "pyyaml>=6.0.1",
+  "rich>=13.7",
+  "scikit-learn>=1.4",
+  "sentencepiece>=0.2.0",
+  "torch>=2.2",
+  "transformers>=4.39",
+  "typer>=0.12,<1.0"
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+
+[project.urls]
+Repository = "https://github.com/brineylab/ghostfold"
+
+[project.scripts]
+ghostfold = "ghostfold.cli:app"
+pseudomsa = "ghostfold.entrypoints:pseudomsa_main"
+mask_msa = "ghostfold.entrypoints:mask_msa_main"
+calculate_neff = "ghostfold.entrypoints:neff_main"
+
+[project.optional-dependencies]
+fold = [
+  "colabfold[alphafold] @ git+https://github.com/sokrypton/ColabFold ; platform_system == 'Linux'"
+]
+fold-cuda12 = [
+  "jax[cuda12]==0.5.3 ; platform_system == 'Linux'",
+  "silence-tensorflow>=1.2 ; platform_system == 'Linux'",
+  "tensorflow>=2.16 ; platform_system == 'Linux'",
+]
+test = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+  "pytest-mock>=3.14",
+]
+dev = [
+  "build>=1.2",
+  "mypy>=1.10",
+  "ruff>=0.6",
+]
+docs = [
+  "mkdocs>=1.6",
+  "mkdocs-material>=9.5",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ghostfold", "src/pseudomsa"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "packaging: build/package smoke tests that validate wheel/sdist flows.",
+]

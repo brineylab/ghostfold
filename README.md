@@ -66,7 +66,40 @@ source ~/.bashrc
 
 ---
 
-### 4. Install dependencies
+### 4. Install GhostFold (pip package)
+
+Install GhostFold from the repository root:
+
+```bash
+pip install .
+```
+
+This base install includes the Python API and CLI for MSA, masking, and Neff workflows.
+
+#### Fold workflow extras
+
+Folding has heavier runtime dependencies and is intentionally split into extras:
+
+```bash
+# ColabFold integration dependencies (Linux-only marker)
+pip install ".[fold]"
+
+# Optional CUDA12/JAX/TensorFlow stack (Linux-only marker)
+pip install ".[fold,fold-cuda12]"
+```
+
+If you install from an index instead of local source, use:
+
+```bash
+pip install "ghostfold[fold]"
+pip install "ghostfold[fold,fold-cuda12]"
+```
+
+`fold` and `fold-cuda12` extras are constrained to Linux in package metadata. You still need system tools such as `nvidia-smi` and `mamba` available for fold execution.
+
+---
+
+### 5. Optional manual dependency setup
 
 GhostFold relies on the following core libraries:
 
@@ -132,13 +165,13 @@ If you prefer to run predictions via **Google Colab**, you can use the generated
 
 ## Running GhostFold
 
-Once setup is complete, ensure all scripts are executable:
+Use the packaged CLI entrypoint:
 
 ```bash
-chmod +x ghostfold.sh
+ghostfold run --project_name <your_project_name> --fasta_file <path/to/your/fasta_file.fasta>
 ```
 
-Then, launch a prediction using:
+The legacy shell entrypoint is still available as a thin compatibility wrapper and forwards to the same CLI:
 
 ```bash
 ./ghostfold.sh --project_name <your_project_name> --fasta_file <path/to/your/fasta_file.fasta>
@@ -149,7 +182,7 @@ Then, launch a prediction using:
 GhostFold includes a sample FASTA file for demonstration:
 
 ```bash
-./ghostfold.sh --project_name 7JJV --fasta_file query.fasta
+ghostfold run --project_name 7JJV --fasta_file query.fasta
 ```
 
 ---
@@ -164,8 +197,61 @@ GhostFold can operate in two primary modes:
 You may run folding separately after generating MSAs. To explore the available options:
 
 ```bash
-./ghostfold.sh --help
+ghostfold run --help
 ```
+
+### Legacy utility command aliases
+
+The main CLI exposes compatibility subcommands for legacy utilities:
+
+```bash
+ghostfold mask_msa --input_path in.a3m --output_path out.a3m --mask_fraction 0.15
+ghostfold calculate_neff <project_dir>
+```
+
+---
+
+## Python API quickstart
+
+GhostFold exposes a typed API via `ghostfold` and `ghostfold.api`.
+
+```python
+from ghostfold import PipelineWorkflowConfig, run_pipeline_workflow
+
+result = run_pipeline_workflow(
+    PipelineWorkflowConfig(
+        project_name="demo_project",
+        fasta_file="query.fasta",
+        subsample=True,
+    )
+)
+
+print(result.success, result.mode)
+for warning in result.warnings:
+    print("WARNING:", warning)
+```
+
+`PipelineWorkflowResult.warnings` is intentionally part of the stable contract.
+Treat non-empty warnings as soft-failure/partial-output signals even when `success` is `True`.
+
+---
+
+## CLI and migration reference
+
+For legacy-to-modern command mapping and parity notes, see:
+
+- [MIGRATION.md](MIGRATION.md)
+
+---
+
+## Build and release notes
+
+Release gates and tagging workflow are documented in:
+
+- [RELEASING.md](RELEASING.md)
+
+`python -m build` uses isolated build environments by default, which requires network access to resolve build backend dependencies (for example `hatchling`).
+In offline or restricted environments, preinstall the backend and use `python -m build --no-isolation`.
 
 ---
 

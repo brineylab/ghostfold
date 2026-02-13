@@ -2,11 +2,9 @@
 import re
 import time
 from difflib import SequenceMatcher
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional
 
 import numpy as np
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 
 AA_LETTERS = "ACDEFGHIKLMNPQRSTVWYX"
 

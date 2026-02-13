@@ -1,0 +1,53 @@
+name: release-gates
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  gate-and-package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install release dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,test]"
+          python -m pip install build twine
+
+      - name: Lint
+        run: python -m ruff check src tests
+
+      - name: Test
+        run: python -m pytest -q
+
+      - name: Build artifacts
+        run: python -m build
+
+      - name: Validate artifacts
+        run: python -m twine check dist/*
+
+      - name: Validate extras resolution (Linux)
+        run: |
+          python -m pip install --dry-run ".[test]"
+          python -m pip install --dry-run ".[fold]"
+
+      - name: Run packaging smoke tests
+        env:
+          GHOSTFOLD_RUN_PACKAGING_SMOKE: "1"
+        run: python -m pytest -q tests/test_packaging_smoke.py
+
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghostfold-dist
+          path: dist/*

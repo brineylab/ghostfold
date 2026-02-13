@@ -6,7 +6,6 @@ import torch
 from typing import List, Dict, Any
 from transformers import T5Tokenizer, AutoModelForSeq2SeqLM
 from rich.console import Console
-from rich.progress import Progress
 
 from .io import append_fasta
 from .model import generate_3di, generate_aa

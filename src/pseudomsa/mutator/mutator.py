@@ -1,6 +1,3 @@
-import os
-import json
-
 from Bio.Seq import Seq
 from Bio.Align import substitution_matrices
 import random

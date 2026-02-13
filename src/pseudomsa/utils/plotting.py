@@ -8,7 +8,7 @@ from rich.console import Console
 
 # Assuming these are your existing utility functions
 from .msa_coverage import plot_msa_coverage
-from .coevolution import get_coevolution_numpy, plot_coevolution
+from .coevolution import get_coevolution_numpy, plot_coevolution as render_coevolution
 
 def generate_optional_plots(
     sequences: List[str],
@@ -57,7 +57,7 @@ def generate_optional_plots(
             console.print(f"Generating coevolution map from [bold]{base_name}[/bold] MSA.")
             coevol_matrix = get_coevolution_numpy(seq_records)
             plot_path = os.path.join(img_dir, f'coevolution_{base_name}_msa.png')
-            plot_coevolution(coevol_matrix, plot_path)
+            render_coevolution(coevol_matrix, plot_path)
             console.print(f"Coevolution map saved to [link={plot_path}]{plot_path}[/link]")
         else:
             console.print(f"[yellow]Skipping coevolution plot for [bold]{base_name}[/bold] as fewer than 2 sequences are available.[/yellow]")
