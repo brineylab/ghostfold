@@ -1,4 +1,3 @@
-import pytest
 from typer.testing import CliRunner
 
 from ghostfold.cli.app import app
@@ -11,6 +10,7 @@ class TestMainApp:
         result = runner.invoke(app, ["--help"])
         assert result.exit_code == 0
         assert "ghostfold" in result.output.lower() or "GhostFold" in result.output
+        assert "install-colabfold" in result.output
 
     def test_version(self):
         result = runner.invoke(app, ["--version"])
@@ -43,6 +43,7 @@ class TestFoldCommand:
         assert "--project-name" in result.output
         assert "--subsample" in result.output
         assert "--mask-fraction" in result.output
+        assert "--colabfold-env" in result.output
 
     def test_missing_required(self):
         result = runner.invoke(app, ["fold"])
@@ -56,6 +57,7 @@ class TestRunCommand:
         assert "--project-name" in result.output
         assert "--fasta-file" in result.output
         assert "--subsample" in result.output
+        assert "--colabfold-env" in result.output
 
     def test_missing_required(self):
         result = runner.invoke(app, ["run"])
@@ -80,3 +82,11 @@ class TestNeffCommand:
         result = runner.invoke(app, ["neff", "--help"])
         assert result.exit_code == 0
         assert "project_dir" in result.output.lower() or "PROJECT_DIR" in result.output
+
+
+class TestInstallColabfoldCommand:
+    def test_help(self):
+        result = runner.invoke(app, ["install-colabfold", "--help"])
+        assert result.exit_code == 0
+        assert "--colabfold-env" in result.output
+        assert "--data-dir" in result.output

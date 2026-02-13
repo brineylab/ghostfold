@@ -53,7 +53,7 @@ See the [Hugging Face documentation](https://huggingface.co/docs/hub/security-to
 
 ## CLI Usage
 
-GhostFold provides a single command-line tool with five subcommands:
+GhostFold provides a single command-line tool with six subcommands:
 
 ### Generate pseudoMSAs
 
@@ -81,6 +81,7 @@ Options:
 - `--subsample` — Enable MSA subsampling (multiple depth levels)
 - `--mask-fraction FLOAT` — Mask a fraction of MSA residues (0.0-1.0)
 - `--num-gpus INT` — Override auto-detected GPU count
+- `--colabfold-env TEXT` — Mamba environment name containing ColabFold (default: `colabfold`)
 
 ### Full pipeline (MSA + folding)
 
@@ -89,6 +90,20 @@ ghostfold run --project-name my_project --fasta-file query.fasta
 ```
 
 Combines all options from `msa` and `fold` commands.
+
+Both `ghostfold run` and `ghostfold fold` perform a ColabFold preflight check before
+starting work. If ColabFold is not installed or not functional, the command exits
+with setup instructions.
+
+### Install local ColabFold runtime
+
+```bash
+ghostfold install-colabfold
+```
+
+Options:
+- `--colabfold-env TEXT` — Mamba environment name to create/use (default: `colabfold`)
+- `--data-dir PATH` — Directory for ColabFold data/model cache (default: `./localcolabfold`)
 
 ### Mask MSA files
 
@@ -142,11 +157,26 @@ run_pipeline(
 To enable local structure prediction with ColabFold:
 
 ```bash
+ghostfold install-colabfold
+```
+
+This creates a separate `colabfold` conda environment with all required dependencies and downloads AlphaFold2 model weights.
+
+Legacy shell installer (still supported):
+
+```bash
 chmod +x scripts/install_localcolabfold.sh
 ./scripts/install_localcolabfold.sh
 ```
 
-This creates a separate `colabfold` conda environment with all required dependencies and downloads AlphaFold2 model weights.
+### Troubleshooting ColabFold setup
+
+- If `mamba` is missing, install it first: [Mamba installation guide](https://mamba.readthedocs.io/en/stable/installation/mamba-installation.html)
+- If `ghostfold run` or `ghostfold fold` reports ColabFold is not functional, run:
+
+```bash
+ghostfold install-colabfold
+```
 
 If you prefer cloud-based prediction, you can use the generated pseudoMSAs directly in [ColabFold](https://colab.research.google.com/github/sokrypton/ColabFold/blob/main/AlphaFold2.ipynb) by selecting **"custom_msa"** under MSA settings.
 

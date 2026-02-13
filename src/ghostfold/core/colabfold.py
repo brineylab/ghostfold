@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import glob
 import os
-import shutil
 import subprocess
 import zipfile
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import List, Optional
 
+from ghostfold.core.colabfold_env import (
+    DEFAULT_COLABFOLD_ENV,
+    ColabFoldSetupError,
+    ensure_colabfold_ready,
+)
 from ghostfold.core.postprocess import cleanup_colabfold_outputs
 from ghostfold.msa.mask import mask_a3m_file
 
@@ -38,13 +42,14 @@ def _run_colabfold_subprocess(
     output_dir: str,
     max_seq: int,
     max_extra_seq: int,
+    colabfold_env: str,
 ) -> None:
     """Run a single colabfold_batch subprocess on a specific GPU."""
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
 
     cmd = [
-        "mamba", "run", "-n", "colabfold", "--no-capture-output",
+        "mamba", "run", "-n", colabfold_env, "--no-capture-output",
         "colabfold_batch",
         msa_file,
         output_dir,
@@ -61,6 +66,7 @@ def run_colabfold(
     num_gpus: int,
     subsample: bool = False,
     mask_fraction: Optional[float] = None,
+    colabfold_env: str = DEFAULT_COLABFOLD_ENV,
 ) -> None:
     """Run ColabFold structure prediction on generated MSAs.
 
@@ -69,12 +75,14 @@ def run_colabfold(
         num_gpus: Number of GPUs to distribute jobs across.
         subsample: If True, run multiple subsampling levels.
         mask_fraction: Optional fraction (0.0-1.0) of residues to mask.
+        colabfold_env: Mamba environment containing ColabFold.
     """
     print("---\nStarting ColabFold Structure Prediction...")
 
-    # Pre-flight check
-    if not shutil.which("mamba"):
-        raise RuntimeError("mamba command not found.")
+    try:
+        ensure_colabfold_ready(colabfold_env)
+    except ColabFoldSetupError as exc:
+        raise RuntimeError(str(exc)) from exc
 
     msa_root_dir = os.path.join(project_name, "msa")
     if not os.path.isdir(msa_root_dir):
@@ -148,6 +156,7 @@ def run_colabfold(
                         current_pred_dir,
                         max_seq,
                         max_extra_seq,
+                        colabfold_env,
                     )
                     futures.append(future)
 
