@@ -8,164 +8,147 @@
 
 **GhostFold** is a next-generation protein folding framework that predicts 3D structures directly from single sequences — without relying on large evolutionary databases. By generating **synthetic, structure-aware multiple sequence alignments (MSAs)**, GhostFold achieves high accuracy while remaining lightweight and portable.
 
-This repository provides scripts and configurations to set up GhostFold locally using **Mamba** and **ColabFold** environments, along with integration support for **Hugging Face Transformers**.
-
 ---
 
 ## Installation
 
-### 1. Install Mamba (if not already installed)
+### 1. Install PyTorch with CUDA
 
-GhostFold uses **Mamba** for virtual environment management.
-
-You can install Mamba using one of the following methods:
-
-#### **Using Conda (recommended if Conda is already installed)**
+GhostFold requires PyTorch with CUDA support. Install the appropriate version for your system **before** installing GhostFold:
 
 ```bash
-conda install -n base -c conda-forge mamba
+# Example for CUDA 12.1 (adjust for your CUDA version)
+pip install torch --index-url https://download.pytorch.org/whl/cu121
 ```
 
-#### **Using Miniforge (standalone installation)**
+Refer to the [PyTorch installation guide](https://pytorch.org/get-started/locally/) for platform-specific instructions.
+
+### 2. Install GhostFold
 
 ```bash
-# For Linux or macOS (ARM/x86)
-wget https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-Linux-x86_64.sh
-bash Mambaforge-Linux-x86_64.sh
+pip install ghostfold
 ```
 
-Follow the on-screen prompts to complete installation, then restart your terminal or run:
-
-```bash
-source ~/.bashrc
-```
-
----
-
-### 2. Clone the repository
+For development:
 
 ```bash
 git clone https://github.com/brineylab/ghostfold.git
 cd ghostfold
-```
-
----
-
-### 3. Create and activate a new Mamba environment
-
-```bash
-mamba create -n ghostfold python=3.10
-mamba activate ghostfold
-```
-
-If you receive an error indicating Mamba isn’t initialized, activate it manually:
-
-```bash
-source ~/.bashrc
-```
-
----
-
-### 4. Install dependencies
-
-GhostFold relies on the following core libraries:
-
-```
-torch
-transformers
-sentencepiece
-```
-
-Install them using:
-
-```bash
-mamba install pytorch torchvision torchaudio -c pytorch
-mamba install transformers sentencepiece -c conda-forge
-```
-
-Install the appropriate CUDA drivers for PyTorch.
-
-Refer to the [Transformers Installation Guide](https://huggingface.co/docs/transformers/installation) for platform-specific setup details.
-
-We use [Rich](https://rich.readthedocs.io/en/stable/introduction.html) for printing log messages. Install it within the environment with:
-
-```
-pip install rich
+pip install -e ".[dev]"
 ```
 
 ---
 
 ## Hugging Face Authentication
 
-When using `from_pretrained()` to load models, GhostFold automatically fetches pretrained weights from the Hugging Face Hub.
-You may need to create and configure a Hugging Face access token. See the instructions [here](https://huggingface.co/docs/hub/security-tokens).
+GhostFold uses ProstT5 from the Hugging Face Hub. You may need to configure a Hugging Face access token:
 
 ```bash
 huggingface-cli login
+```
+
+See the [Hugging Face documentation](https://huggingface.co/docs/hub/security-tokens) for details.
+
+---
+
+## CLI Usage
+
+GhostFold provides a single command-line tool with five subcommands:
+
+### Generate pseudoMSAs
+
+```bash
+ghostfold msa --project-name my_project --fasta-file query.fasta
+```
+
+Options:
+- `--config PATH` — Custom YAML config (overrides bundled defaults)
+- `--coverage FLOAT` — Coverage values (repeatable, default: 1.0)
+- `--num-runs INT` — Independent runs per sequence (default: 1)
+- `--evolve-msa` — Enable MSA evolution with substitution matrices
+- `--mutation-rates JSON` — Mutation rates per matrix
+- `--sample-percentage FLOAT` — Fraction of sequences to evolve (default: 1.0)
+- `--plot-msa-coverage` — Generate MSA coverage heatmaps
+- `--no-coevolution-maps` — Skip coevolution map generation
+
+### Run structure prediction
+
+```bash
+ghostfold fold --project-name my_project
+```
+
+Options:
+- `--subsample` — Enable MSA subsampling (multiple depth levels)
+- `--mask-fraction FLOAT` — Mask a fraction of MSA residues (0.0-1.0)
+- `--num-gpus INT` — Override auto-detected GPU count
+
+### Full pipeline (MSA + folding)
+
+```bash
+ghostfold run --project-name my_project --fasta-file query.fasta
+```
+
+Combines all options from `msa` and `fold` commands.
+
+### Mask MSA files
+
+```bash
+ghostfold mask --input-path input.a3m --output-path masked.a3m --mask-fraction 0.15
+```
+
+### Calculate Neff scores
+
+```bash
+ghostfold neff my_project/
+```
+
+### Version
+
+```bash
+ghostfold --version
+```
+
+---
+
+## Python API
+
+GhostFold can also be used as a Python library:
+
+```python
+from ghostfold import run_pipeline, mask_a3m_file, calculate_neff, MSA_Mutator
+from ghostfold.core.config import load_config
+
+# Load config with optional overrides
+config = load_config("my_config.yaml")
+
+# Run MSA generation pipeline
+run_pipeline(
+    project="my_project",
+    query_fasta="query.fasta",
+    config=config,
+    coverage_list=[1.0],
+    evolve_msa=True,
+    mutation_rates_str='{"MEGABLAST": 5, "PAM250": 20, "BLOSUM62": 10}',
+    sample_percentage=1.0,
+    plot_msa=False,
+    plot_coevolution=False,
+)
 ```
 
 ---
 
 ## Local ColabFold Setup
 
-To enable local structure prediction, first ensure the setup scripts are executable:
+To enable local structure prediction with ColabFold:
 
 ```bash
-chmod +x install_localcolabfold.sh ghostfold.sh
+chmod +x scripts/install_localcolabfold.sh
+./scripts/install_localcolabfold.sh
 ```
 
-Then run the installation script:
+This creates a separate `colabfold` conda environment with all required dependencies and downloads AlphaFold2 model weights.
 
-```bash
-./install_localcolabfold.sh
-```
-
-This script will:
-
-* Configure a compatible ColabFold environment
-* Install all required dependencies
-* Download model weights automatically
-
-If you prefer to run predictions via **Google Colab**, you can use the generated **pseudoMSAs** directly in [ColabFold](https://colab.research.google.com/github/sokrypton/ColabFold/blob/main/AlphaFold2.ipynb) by selecting **“custom_msa”** under [MSA settings](https://colab.research.google.com/github/sokrypton/ColabFold/blob/main/AlphaFold2.ipynb#scrollTo=C2_sh2uAonJH).
-
----
-
-## Running GhostFold
-
-Once setup is complete, ensure all scripts are executable:
-
-```bash
-chmod +x ghostfold.sh
-```
-
-Then, launch a prediction using:
-
-```bash
-./ghostfold.sh --project_name <your_project_name> --fasta_file <path/to/your/fasta_file.fasta>
-```
-
-### Example run
-
-GhostFold includes a sample FASTA file for demonstration:
-
-```bash
-./ghostfold.sh --project_name 7JJV --fasta_file query.fasta
-```
-
----
-
-## Modes of Operation
-
-GhostFold can operate in two primary modes:
-
-1. **MSA Generation Mode** – Generates structure-aware synthetic MSAs only.
-2. **Full Mode** – Runs both synthetic MSA generation **and** structure prediction.
-
-You may run folding separately after generating MSAs. To explore the available options:
-
-```bash
-./ghostfold.sh --help
-```
+If you prefer cloud-based prediction, you can use the generated pseudoMSAs directly in [ColabFold](https://colab.research.google.com/github/sokrypton/ColabFold/blob/main/AlphaFold2.ipynb) by selecting **"custom_msa"** under MSA settings.
 
 ---
 

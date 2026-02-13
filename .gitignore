@@ -3,6 +3,9 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# GhostFold-specific
+src/ghostfold.egg-info/
+
 # C extensions
 *.so
 

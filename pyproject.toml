@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ghostfold"
+dynamic = ["version"]
+description = "Accurate, database-free protein folding from single sequences using structure-aware synthetic MSAs"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+    "biopython>=1.80",
+    "matplotlib>=3.5",
+    "numpy>=1.21",
+    "PyYAML>=6.0",
+    "rich>=13.0",
+    "scikit-learn>=1.0",
+    "sentencepiece>=0.1.96",
+    "torch>=2.0",
+    "transformers>=4.30",
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+    "ruff",
+]
+
+[project.scripts]
+ghostfold = "ghostfold.cli.app:app"
+
+[tool.hatch.version]
+path = "src/ghostfold/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ghostfold"]

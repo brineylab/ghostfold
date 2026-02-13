@@ -1,14 +1,10 @@
-# utils/plotting.py
-
 import os
 from typing import List
-from Bio.SeqRecord import SeqRecord
-from Bio.Seq import Seq
 from rich.console import Console
 
-# Assuming these are your existing utility functions
 from .msa_coverage import plot_msa_coverage
 from .coevolution import get_coevolution_numpy, plot_coevolution
+
 
 def generate_optional_plots(
     sequences: List[str],
@@ -17,22 +13,10 @@ def generate_optional_plots(
     base_name: str,
     custom_colors: List[str],
     plot_msa: bool,
-    plot_coevolution: bool,
+    plot_coevolution_flag: bool,
     console: Console
 ) -> None:
-    """
-    Generates MSA coverage and/or coevolution plots if requested.
-
-    Args:
-        sequences: List of sequence strings.
-        full_len: The expected full length of sequences for coverage plot.
-        img_dir: Directory to save plots.
-        base_name: Base name for output plot files (e.g., 'unfiltered').
-        custom_colors: List of hexadecimal colors for plots.
-        plot_msa: If True, MSA coverage maps will be plotted.
-        plot_coevolution: If True, coevolution maps will be plotted.
-        console: Rich Console object for logging.
-    """
+    """Generates MSA coverage and/or coevolution plots if requested."""
     if not sequences:
         console.print(f"[yellow]No sequences provided for [bold]{base_name}[/bold] plots.[/yellow]")
         return
@@ -51,9 +35,11 @@ def generate_optional_plots(
         console.print(f"[italic gray]MSA coverage plot generation skipped for [bold]{base_name}[/bold].[/italic gray]")
 
     # Coevolution plot
-    if plot_coevolution:
+    if plot_coevolution_flag:
+        from Bio.SeqRecord import SeqRecord
+        from Bio.Seq import Seq
         seq_records = [SeqRecord(Seq(s), id=f"seq_{i}", description="") for i, s in enumerate(sequences)]
-        if len(seq_records) > 1:  # Coevolution needs at least 2 sequences
+        if len(seq_records) > 1:
             console.print(f"Generating coevolution map from [bold]{base_name}[/bold] MSA.")
             coevol_matrix = get_coevolution_numpy(seq_records)
             plot_path = os.path.join(img_dir, f'coevolution_{base_name}_msa.png')
