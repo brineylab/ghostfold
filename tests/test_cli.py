@@ -10,7 +10,7 @@ class TestMainApp:
         result = runner.invoke(app, ["--help"])
         assert result.exit_code == 0
         assert "ghostfold" in result.output.lower() or "GhostFold" in result.output
-        assert "install-colabfold" in result.output
+        assert "install-colabfold" not in result.output
 
     def test_version(self):
         result = runner.invoke(app, ["--version"])
@@ -22,6 +22,11 @@ class TestMainApp:
         # Typer returns exit code 0 or 2 for no_args_is_help depending on version
         assert result.exit_code in (0, 2)
         assert "Usage" in result.output
+
+    def test_install_colabfold_removed(self):
+        result = runner.invoke(app, ["install-colabfold"])
+        assert result.exit_code != 0
+        assert "No such command" in result.output
 
 
 class TestMsaCommand:
@@ -84,11 +89,3 @@ class TestNeffCommand:
         result = runner.invoke(app, ["neff", "--help"])
         assert result.exit_code == 0
         assert "project_dir" in result.output.lower() or "PROJECT_DIR" in result.output
-
-
-class TestInstallColabfoldCommand:
-    def test_help(self):
-        result = runner.invoke(app, ["install-colabfold", "--help"])
-        assert result.exit_code == 0
-        assert "--localcolabfold-dir" in result.output
-        assert "--verbose" in result.output

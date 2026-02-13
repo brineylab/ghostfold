@@ -37,6 +37,16 @@ cd ghostfold
 pip install -e ".[dev]"
 ```
 
+### 3. Install localcolabfold (required for `ghostfold run` and `ghostfold fold`)
+
+`ghostfold run` and `ghostfold fold` require a working local ColabFold runtime.
+From the GhostFold repository root:
+
+```bash
+chmod +x scripts/install_localcolabfold.sh
+./scripts/install_localcolabfold.sh
+```
+
 ---
 
 ## Hugging Face Authentication
@@ -53,7 +63,7 @@ See the [Hugging Face documentation](https://huggingface.co/docs/hub/security-to
 
 ## CLI Usage
 
-GhostFold provides a single command-line tool with six subcommands:
+GhostFold provides a single command-line tool with five subcommands:
 
 ### Generate pseudoMSAs
 
@@ -96,16 +106,6 @@ Both `ghostfold run` and `ghostfold fold` perform a ColabFold preflight check be
 starting work. If ColabFold is not installed or not functional, the command exits
 with setup instructions. Runtime resolution is pixi-first (localcolabfold), with
 legacy mamba fallback when available.
-
-### Install local ColabFold runtime
-
-```bash
-ghostfold install-colabfold
-```
-
-Options:
-- `--localcolabfold-dir PATH` — Path where localcolabfold will be cloned/updated (default: `./localcolabfold`)
-- `--verbose` — Stream full installer output (default is quiet step-wise progress)
 
 ### Mask MSA files
 
@@ -156,22 +156,14 @@ run_pipeline(
 
 ## Local ColabFold Setup
 
-GhostFold now follows the upstream localcolabfold installation method and requires
-`pixi` as a pre-install dependency.
+GhostFold supports both a pixi-based localcolabfold runtime and a legacy mamba runtime.
+The bundled `scripts/install_localcolabfold.sh` installer sets up the legacy mamba runtime.
 
-- Install pixi first: [Pixi installation instructions](https://pixi.prefix.dev/latest/installation/)
 - Localcolabfold upstream setup reference: [localcolabfold README](https://github.com/YoshitakaMo/localcolabfold/blob/main/README.md)
+- Pixi installation instructions (for pixi-based runtime): [Pixi installation instructions](https://pixi.prefix.dev/latest/installation/)
+- Mamba installation guide (required by the bundled installer script): [Mamba installation guide](https://mamba.readthedocs.io/en/stable/installation/mamba-installation.html)
 
-Then install local ColabFold:
-
-```bash
-ghostfold install-colabfold
-```
-
-This command clones/updates `localcolabfold`, runs `pixi install`, and runs `pixi run setup`.
-By default it prints concise step-wise progress. Use `--verbose` to stream full tool output.
-
-Legacy shell installer (still supported):
+Bundled installer script:
 
 ```bash
 chmod +x scripts/install_localcolabfold.sh
@@ -180,12 +172,12 @@ chmod +x scripts/install_localcolabfold.sh
 
 ### Troubleshooting ColabFold setup
 
-- If `pixi` is missing, install it first: [Pixi installation instructions](https://pixi.prefix.dev/latest/installation/)
-- If you rely on the legacy fallback runtime, install mamba: [Mamba installation guide](https://mamba.readthedocs.io/en/stable/installation/mamba-installation.html)
-- If `ghostfold run` or `ghostfold fold` reports ColabFold is not functional, run:
+- If you plan to use a pixi-based localcolabfold checkout, install pixi first: [Pixi installation instructions](https://pixi.prefix.dev/latest/installation/)
+- If you use the bundled installer script, install mamba first: [Mamba installation guide](https://mamba.readthedocs.io/en/stable/installation/mamba-installation.html)
+- If `ghostfold run` or `ghostfold fold` reports ColabFold is not functional, rerun:
 
 ```bash
-ghostfold install-colabfold
+bash scripts/install_localcolabfold.sh
 ```
 
 If you prefer cloud-based prediction, you can use the generated pseudoMSAs directly in [ColabFold](https://colab.research.google.com/github/sokrypton/ColabFold/blob/main/AlphaFold2.ipynb) by selecting **"custom_msa"** under MSA settings.

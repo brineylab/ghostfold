@@ -104,6 +104,7 @@ def test_ensure_colabfold_ready_total_failure(monkeypatch):
         ensure_colabfold_ready()
 
     msg = str(exc.value)
-    assert "ghostfold install-colabfold" in msg
+    assert "bash scripts/install_localcolabfold.sh" in msg
+    assert "required for `ghostfold run` and `ghostfold fold`" in msg
     assert "Pixi installation instructions" in msg
     assert "Mamba installation instructions" in msg

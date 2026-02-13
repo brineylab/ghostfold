@@ -13,7 +13,7 @@ def test_run_fails_preflight_before_msa(monkeypatch, tmp_path):
 
     def fail_preflight(*_args, **_kwargs):
         raise ColabFoldSetupError(
-            "ColabFold is not functional.\nRun `ghostfold install-colabfold` to install/configure ColabFold."
+            "ColabFold is not functional.\nInstall/configure ColabFold by running `bash scripts/install_localcolabfold.sh` from the GhostFold repository root."
         )
 
     def fake_run_parallel_msa(**_kwargs):
@@ -39,7 +39,7 @@ def test_run_fails_preflight_before_msa(monkeypatch, tmp_path):
     )
 
     assert result.exit_code == 1
-    assert "ghostfold install-colabfold" in result.output
+    assert "bash scripts/install_localcolabfold.sh" in result.output
     assert called["msa"] is False
     assert called["fold"] is False
 
@@ -49,7 +49,7 @@ def test_fold_fails_preflight_before_colabfold_dispatch(monkeypatch):
 
     def fail_preflight(*_args, **_kwargs):
         raise ColabFoldSetupError(
-            "ColabFold is not functional.\nRun `ghostfold install-colabfold` to install/configure ColabFold."
+            "ColabFold is not functional.\nInstall/configure ColabFold by running `bash scripts/install_localcolabfold.sh` from the GhostFold repository root."
         )
 
     def fake_run_colabfold(**_kwargs):
@@ -69,5 +69,5 @@ def test_fold_fails_preflight_before_colabfold_dispatch(monkeypatch):
     )
 
     assert result.exit_code == 1
-    assert "ghostfold install-colabfold" in result.output
+    assert "bash scripts/install_localcolabfold.sh" in result.output
     assert called["fold"] is False

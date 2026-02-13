@@ -1,7 +1,7 @@
 import typer
 
 from ghostfold._version import __version__
-from ghostfold.cli import fold, install_colabfold, mask, msa, neff, run
+from ghostfold.cli import fold, mask, msa, neff, run
 
 app = typer.Typer(
     name="ghostfold",
@@ -12,7 +12,6 @@ app = typer.Typer(
 app.add_typer(msa.app, name="msa")
 app.add_typer(fold.app, name="fold")
 app.add_typer(run.app, name="run")
-app.add_typer(install_colabfold.app, name="install-colabfold")
 app.add_typer(mask.app, name="mask")
 app.add_typer(neff.app, name="neff")
 

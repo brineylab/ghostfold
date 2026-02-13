@@ -40,13 +40,8 @@ def resolve_localcolabfold_dir(localcolabfold_dir: Path | str | None = None) -> 
 
 
 def _install_command(localcolabfold_dir: Path | str | None = None) -> str:
-    cmd = "ghostfold install-colabfold"
-    if localcolabfold_dir is not None:
-        resolved = resolve_localcolabfold_dir(localcolabfold_dir)
-        default_resolved = resolve_localcolabfold_dir(None)
-        if resolved != default_resolved:
-            cmd += f" --localcolabfold-dir {resolved}"
-    return cmd
+    _ = localcolabfold_dir
+    return "bash scripts/install_localcolabfold.sh"
 
 
 def _format_setup_error(
@@ -57,7 +52,11 @@ def _format_setup_error(
 ) -> ColabFoldSetupError:
     lines = [
         reason,
-        f"Run `{_install_command(localcolabfold_dir)}` to install/configure ColabFold.",
+        (
+            "Install/configure ColabFold by running "
+            f"`{_install_command(localcolabfold_dir)}` from the GhostFold repository root."
+        ),
+        "This setup is required for `ghostfold run` and `ghostfold fold`.",
     ]
     if include_pixi_hint:
         lines.append(f"Pixi installation instructions: {PIXI_INSTALL_URL}")
