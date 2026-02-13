@@ -6,7 +6,7 @@ import subprocess
 import zipfile
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 from ghostfold.core.colabfold_env import (
     DEFAULT_COLABFOLD_ENV,
@@ -42,14 +42,15 @@ def _run_colabfold_subprocess(
     output_dir: str,
     max_seq: int,
     max_extra_seq: int,
-    colabfold_env: str,
+    launcher_prefix: Sequence[str],
+    launcher_cwd: Optional[str],
 ) -> None:
     """Run a single colabfold_batch subprocess on a specific GPU."""
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
 
     cmd = [
-        "mamba", "run", "-n", colabfold_env, "--no-capture-output",
+        *launcher_prefix,
         "colabfold_batch",
         msa_file,
         output_dir,
@@ -58,7 +59,13 @@ def _run_colabfold_subprocess(
         *COLABFOLD_PARAMS,
     ]
 
-    subprocess.run(cmd, env=env, check=True, stdin=subprocess.DEVNULL)
+    subprocess.run(
+        cmd,
+        env=env,
+        check=True,
+        stdin=subprocess.DEVNULL,
+        cwd=launcher_cwd,
+    )
 
 
 def run_colabfold(
@@ -67,6 +74,7 @@ def run_colabfold(
     subsample: bool = False,
     mask_fraction: Optional[float] = None,
     colabfold_env: str = DEFAULT_COLABFOLD_ENV,
+    localcolabfold_dir: Path | str | None = None,
 ) -> None:
     """Run ColabFold structure prediction on generated MSAs.
 
@@ -75,12 +83,16 @@ def run_colabfold(
         num_gpus: Number of GPUs to distribute jobs across.
         subsample: If True, run multiple subsampling levels.
         mask_fraction: Optional fraction (0.0-1.0) of residues to mask.
-        colabfold_env: Mamba environment containing ColabFold.
+        colabfold_env: Legacy mamba environment used as fallback.
+        localcolabfold_dir: Optional path to localcolabfold pixi checkout.
     """
     print("---\nStarting ColabFold Structure Prediction...")
 
     try:
-        ensure_colabfold_ready(colabfold_env)
+        launcher = ensure_colabfold_ready(
+            colabfold_env=colabfold_env,
+            localcolabfold_dir=localcolabfold_dir,
+        )
     except ColabFoldSetupError as exc:
         raise RuntimeError(str(exc)) from exc
 
@@ -156,7 +168,8 @@ def run_colabfold(
                         current_pred_dir,
                         max_seq,
                         max_extra_seq,
-                        colabfold_env,
+                        launcher.command_prefix,
+                        str(launcher.cwd) if launcher.cwd is not None else None,
                     )
                     futures.append(future)
 

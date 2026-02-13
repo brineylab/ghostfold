@@ -48,7 +48,12 @@ def run(
     colabfold_env: str = typer.Option(
         "colabfold",
         "--colabfold-env",
-        help="Mamba environment name containing ColabFold.",
+        help="Legacy mamba environment name for ColabFold fallback.",
+    ),
+    localcolabfold_dir: Optional[Path] = typer.Option(
+        None,
+        "--localcolabfold-dir",
+        help="Path to localcolabfold pixi checkout (default: ./localcolabfold).",
     ),
 ) -> None:
     """Run full pipeline: MSA generation then ColabFold structure prediction."""
@@ -58,7 +63,10 @@ def run(
 
     gpus = num_gpus if num_gpus is not None else detect_gpus()
     try:
-        ensure_colabfold_ready(colabfold_env)
+        ensure_colabfold_ready(
+            colabfold_env=colabfold_env,
+            localcolabfold_dir=localcolabfold_dir,
+        )
     except ColabFoldSetupError as exc:
         typer.secho(f"Warning: {exc}", fg=typer.colors.YELLOW, err=True)
         raise typer.Exit(code=1)
@@ -76,4 +84,5 @@ def run(
         subsample=subsample,
         mask_fraction=mask_fraction,
         colabfold_env=colabfold_env,
+        localcolabfold_dir=localcolabfold_dir,
     )

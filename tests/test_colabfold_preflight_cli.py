@@ -11,7 +11,7 @@ def test_run_fails_preflight_before_msa(monkeypatch, tmp_path):
     fasta_file = tmp_path / "query.fasta"
     fasta_file.write_text(">q\nACDE\n")
 
-    def fail_preflight(_env):
+    def fail_preflight(*_args, **_kwargs):
         raise ColabFoldSetupError(
             "ColabFold is not functional.\nRun `ghostfold install-colabfold` to install/configure ColabFold."
         )
@@ -47,7 +47,7 @@ def test_run_fails_preflight_before_msa(monkeypatch, tmp_path):
 def test_fold_fails_preflight_before_colabfold_dispatch(monkeypatch):
     called = {"fold": False}
 
-    def fail_preflight(_env):
+    def fail_preflight(*_args, **_kwargs):
         raise ColabFoldSetupError(
             "ColabFold is not functional.\nRun `ghostfold install-colabfold` to install/configure ColabFold."
         )

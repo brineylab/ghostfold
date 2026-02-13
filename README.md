@@ -81,7 +81,8 @@ Options:
 - `--subsample` — Enable MSA subsampling (multiple depth levels)
 - `--mask-fraction FLOAT` — Mask a fraction of MSA residues (0.0-1.0)
 - `--num-gpus INT` — Override auto-detected GPU count
-- `--colabfold-env TEXT` — Mamba environment name containing ColabFold (default: `colabfold`)
+- `--localcolabfold-dir PATH` — Path to localcolabfold pixi checkout (default: `./localcolabfold`)
+- `--colabfold-env TEXT` — Legacy mamba env name for ColabFold fallback (default: `colabfold`)
 
 ### Full pipeline (MSA + folding)
 
@@ -93,7 +94,8 @@ Combines all options from `msa` and `fold` commands.
 
 Both `ghostfold run` and `ghostfold fold` perform a ColabFold preflight check before
 starting work. If ColabFold is not installed or not functional, the command exits
-with setup instructions.
+with setup instructions. Runtime resolution is pixi-first (localcolabfold), with
+legacy mamba fallback when available.
 
 ### Install local ColabFold runtime
 
@@ -102,8 +104,8 @@ ghostfold install-colabfold
 ```
 
 Options:
-- `--colabfold-env TEXT` — Mamba environment name to create/use (default: `colabfold`)
-- `--data-dir PATH` — Directory for ColabFold data/model cache (default: `./localcolabfold`)
+- `--localcolabfold-dir PATH` — Path where localcolabfold will be cloned/updated (default: `./localcolabfold`)
+- `--verbose` — Stream full installer output (default is quiet step-wise progress)
 
 ### Mask MSA files
 
@@ -154,13 +156,20 @@ run_pipeline(
 
 ## Local ColabFold Setup
 
-To enable local structure prediction with ColabFold:
+GhostFold now follows the upstream localcolabfold installation method and requires
+`pixi` as a pre-install dependency.
+
+- Install pixi first: [Pixi installation instructions](https://pixi.prefix.dev/latest/installation/)
+- Localcolabfold upstream setup reference: [localcolabfold README](https://github.com/YoshitakaMo/localcolabfold/blob/main/README.md)
+
+Then install local ColabFold:
 
 ```bash
 ghostfold install-colabfold
 ```
 
-This creates a separate `colabfold` conda environment with all required dependencies and downloads AlphaFold2 model weights.
+This command clones/updates `localcolabfold`, runs `pixi install`, and runs `pixi run setup`.
+By default it prints concise step-wise progress. Use `--verbose` to stream full tool output.
 
 Legacy shell installer (still supported):
 
@@ -171,7 +180,8 @@ chmod +x scripts/install_localcolabfold.sh
 
 ### Troubleshooting ColabFold setup
 
-- If `mamba` is missing, install it first: [Mamba installation guide](https://mamba.readthedocs.io/en/stable/installation/mamba-installation.html)
+- If `pixi` is missing, install it first: [Pixi installation instructions](https://pixi.prefix.dev/latest/installation/)
+- If you rely on the legacy fallback runtime, install mamba: [Mamba installation guide](https://mamba.readthedocs.io/en/stable/installation/mamba-installation.html)
 - If `ghostfold run` or `ghostfold fold` reports ColabFold is not functional, run:
 
 ```bash

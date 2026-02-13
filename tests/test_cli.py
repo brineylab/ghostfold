@@ -44,6 +44,7 @@ class TestFoldCommand:
         assert "--subsample" in result.output
         assert "--mask-fraction" in result.output
         assert "--colabfold-env" in result.output
+        assert "--localcolabfold-dir" in result.output
 
     def test_missing_required(self):
         result = runner.invoke(app, ["fold"])
@@ -58,6 +59,7 @@ class TestRunCommand:
         assert "--fasta-file" in result.output
         assert "--subsample" in result.output
         assert "--colabfold-env" in result.output
+        assert "--localcolabfold-dir" in result.output
 
     def test_missing_required(self):
         result = runner.invoke(app, ["run"])
@@ -88,5 +90,5 @@ class TestInstallColabfoldCommand:
     def test_help(self):
         result = runner.invoke(app, ["install-colabfold", "--help"])
         assert result.exit_code == 0
-        assert "--colabfold-env" in result.output
-        assert "--data-dir" in result.output
+        assert "--localcolabfold-dir" in result.output
+        assert "--verbose" in result.output
