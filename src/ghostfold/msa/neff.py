@@ -5,6 +5,10 @@ import pathlib
 import sys
 from typing import List, Optional, Tuple
 
+from ghostfold.core.logging import get_logger
+
+logger = get_logger("neff")
+
 
 def parse_a3m(file_path: pathlib.Path) -> List[str]:
     """Parses a single a3m file to extract all sequences.
@@ -40,7 +44,7 @@ def parse_a3m(file_path: pathlib.Path) -> List[str]:
                 sequences.append(current_sequence)
         return sequences
     except Exception as e:
-        print(f"An error occurred while reading {file_path}: {e}", file=sys.stderr)
+        logger.error(f"An error occurred while reading {file_path}: {e}")
         return []
 
 
@@ -81,7 +85,7 @@ def calculate_neff(sequences: List[str], identity_threshold: float = 0.5) -> flo
             total_sum += 1.0 / (1.0 + similar_sequences)
         return (1.0 / math.sqrt(L)) * total_sum
     except Exception as e:
-        print(f"An unexpected error occurred during Neff calculation: {e}", file=sys.stderr)
+        logger.error(f"An unexpected error occurred during Neff calculation: {e}")
         return 0.0
 
 
@@ -95,7 +99,7 @@ def process_single_file(msa_file: pathlib.Path) -> Optional[Tuple[str, float]]:
         neff_value = calculate_neff(sequences)
         return (protein_name, neff_value)
     except Exception as e:
-        print(f"Failed to process {msa_file}: {e}", file=sys.stderr)
+        logger.error(f"Failed to process {msa_file}: {e}")
         return None
 
 
@@ -114,17 +118,17 @@ def run_neff_calculation_in_parallel(root_dir: str) -> None:
 
     a3m_files = sorted(list(root_path.glob('msa/*/*.a3m')))
     if not a3m_files:
-        print(f"No '.a3m' files found matching 'msa/*/*.a3m' under '{root_dir}'.")
+        logger.info(f"No '.a3m' files found matching 'msa/*/*.a3m' under '{root_dir}'.")
         return
 
-    print(f"Found {len(a3m_files)} MSA files. Starting parallel processing...")
+    logger.info(f"Found {len(a3m_files)} MSA files. Starting parallel processing...")
     results = []
     with concurrent.futures.ProcessPoolExecutor() as executor:
         future_results = executor.map(process_single_file, a3m_files)
         results = [res for res in future_results if res is not None]
 
     if not results:
-        print("Processing complete, but no valid results were generated.")
+        logger.info("Processing complete, but no valid results were generated.")
         return
 
     output_csv_path = root_path / "neff_results.csv"
@@ -137,7 +141,7 @@ def run_neff_calculation_in_parallel(root_dir: str) -> None:
             for protein_name, neff_value in sorted_results:
                 writer.writerow([protein_name, f"{neff_value:.2f}"])
 
-        print(f"\nSuccess! Processed {len(sorted_results)} files.")
-        print(f"Results saved to: {output_csv_path}")
+        logger.info(f"Success! Processed {len(sorted_results)} files.")
+        logger.info(f"Results saved to: {output_csv_path}")
     except IOError as e:
-        print(f"\nError writing to CSV file: {e}", file=sys.stderr)
+        logger.error(f"Error writing to CSV file: {e}")

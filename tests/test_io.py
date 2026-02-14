@@ -91,13 +91,12 @@ class TestConcatenateFastaFiles:
         records = read_fasta(str(output))
         assert len(records) == 2
 
-    def test_empty_list(self, tmp_dir, capsys):
+    def test_empty_list(self, tmp_dir):
         output = tmp_dir / "empty.fasta"
         concatenate_fasta_files([], str(output))
         assert not output.exists()
 
-    def test_skips_missing_files(self, tmp_dir, capsys):
+    def test_skips_missing_files(self, tmp_dir):
         output = tmp_dir / "output.fasta"
         concatenate_fasta_files(["/nonexistent/file.fasta"], str(output))
-        captured = capsys.readouterr()
-        assert "Skipping" in captured.out or "No valid records" in captured.out
+        assert not output.exists()

@@ -41,9 +41,13 @@ def fold(
     ),
 ) -> None:
     """Run ColabFold on existing MSAs for structure prediction."""
+    from ghostfold.core.logging import setup_logging, get_console
     from ghostfold.core.gpu import detect_gpus
     from ghostfold.core.colabfold import run_colabfold
     from ghostfold.core.colabfold_env import ColabFoldSetupError, ensure_colabfold_ready
+
+    log_path = setup_logging(project_name)
+    get_console().print(f"[dim]Log file: {log_path}[/dim]")
 
     gpus = num_gpus if num_gpus is not None else detect_gpus()
     try:

@@ -5,6 +5,10 @@ from typing import List, Optional
 
 import numpy as np
 
+from ghostfold.core.logging import get_logger
+
+logger = get_logger("filters")
+
 AA_LETTERS = "ACDEFGHIKLMNPQRSTVWYX"
 
 
@@ -92,7 +96,7 @@ def filter_sequences(
     if initial_count == 0:
         return []
 
-    print(f"\n--- Starting filtration of {initial_count} sequences ---")
+    logger.info(f"--- Starting filtration of {initial_count} sequences ---")
 
     timing_data = {}
     processed_sequences = sequences
@@ -119,21 +123,21 @@ def filter_sequences(
     last_time = current_time
 
     # --- Reporting ---
-    print(f"{'Step':<20} | {'Removed':>9} | {'Remaining':>11} | {'Time (s)':>10}")
-    print("-" * 59)
+    logger.info(f"{'Step':<20} | {'Removed':>9} | {'Remaining':>11} | {'Time (s)':>10}")
+    logger.info("-" * 59)
 
     last_count = initial_count
     for step_name, data in timing_data.items():
         current_count = data['count']
         time_taken = data['time']
         removed = last_count - current_count
-        print(f"{step_name:<20} | {removed:>9} | {current_count:>11} | {time_taken:>10.2f}")
+        logger.info(f"{step_name:<20} | {removed:>9} | {current_count:>11} | {time_taken:>10.2f}")
         last_count = current_count
 
     total_time = time.time() - start_total_time
     final_count = len(processed_sequences)
-    print("-" * 59)
-    print(f"Total time: {total_time:.2f}s. Final count: {final_count} (removed {initial_count - final_count}).")
-    print("--- Filtration complete ---\n")
+    logger.info("-" * 59)
+    logger.info(f"Total time: {total_time:.2f}s. Final count: {final_count} (removed {initial_count - final_count}).")
+    logger.info("--- Filtration complete ---")
 
     return processed_sequences

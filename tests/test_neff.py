@@ -69,13 +69,13 @@ class TestProcessSingleFile:
 
 
 class TestRunNeffParallel:
-    def test_no_a3m_files(self, tmp_dir, capsys):
-        """Should print a message when no files found."""
+    def test_no_a3m_files(self, tmp_dir):
+        """Should handle no files found gracefully."""
         msa_dir = tmp_dir / "msa" / "test"
         msa_dir.mkdir(parents=True)
         run_neff_calculation_in_parallel(str(tmp_dir))
-        captured = capsys.readouterr()
-        assert "No '.a3m' files found" in captured.out
+        # No CSV should be created when no a3m files are found
+        assert not (tmp_dir / "neff_results.csv").exists()
 
     def test_with_a3m_files(self, tmp_dir):
         """Should produce CSV output."""

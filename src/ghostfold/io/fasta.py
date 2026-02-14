@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Union
 
 from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
+
+from ghostfold.core.logging import get_logger
+
+logger = get_logger("fasta")
 
 
 def read_fasta(file_path: str | Path) -> List[SeqRecord]:
@@ -36,8 +40,8 @@ def append_fasta(
         elif isinstance(seq_item, SeqRecord):
             records_to_append.append(seq_item)
         else:
-            print(
-                f"Warning: Skipping unknown sequence type {type(seq_item)} during append."
+            logger.warning(
+                f"Skipping unknown sequence type {type(seq_item)} during append."
             )
 
     mode = "a" if os.path.exists(output_path) else "w"
@@ -59,24 +63,15 @@ def create_project_dir(project_name: str, header: str) -> str:
 def concatenate_fasta_files(
     file_paths: List[str],
     output_path: str,
-    console: Optional[object] = None,
 ) -> None:
     """Concatenates content of multiple FASTA files into a single output file.
 
     Args:
         file_paths: List of paths to input FASTA files.
         output_path: Path to the output concatenated FASTA file.
-        console: Optional Rich Console object for logging. Falls back to print().
     """
-
-    def _log(msg: str) -> None:
-        if console is not None:
-            console.print(msg)
-        else:
-            print(msg)
-
     if not file_paths:
-        _log("No files to concatenate. Skipping concatenation.")
+        logger.info("No files to concatenate. Skipping concatenation.")
         return
 
     records_to_write: List[SeqRecord] = []
@@ -86,14 +81,14 @@ def concatenate_fasta_files(
                 for record in SeqIO.parse(fname, "fasta"):
                     records_to_write.append(record)
             except Exception as e:
-                _log(f"Warning: Could not parse FASTA file '{fname}': {e}. Skipping.")
+                logger.warning(f"Could not parse FASTA file '{fname}': {e}. Skipping.")
         else:
-            _log(f"Skipping empty or non-existent file: {fname}")
+            logger.info(f"Skipping empty or non-existent file: {fname}")
 
     if records_to_write:
         write_fasta(output_path, records_to_write)
-        _log(
+        logger.info(
             f"Successfully created {output_path} with {len(records_to_write)} records."
         )
     else:
-        _log(f"No valid records found from input files to write to {output_path}.")
+        logger.info(f"No valid records found from input files to write to {output_path}.")

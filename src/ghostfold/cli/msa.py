@@ -27,8 +27,12 @@ def msa(
     sample_percentage: float = typer.Option(1.0, "--sample-percentage", help="Percentage of sequences to sample for evolution."),
 ) -> None:
     """Generate pseudoMSAs from single sequences using ProstT5."""
+    from ghostfold.core.logging import setup_logging, get_console
     from ghostfold.core.config import load_config
     from ghostfold.core.pipeline import run_pipeline
+
+    log_path = setup_logging(project_name)
+    get_console().print(f"[dim]Log file: {log_path}[/dim]")
 
     cfg = load_config(config)
     coverage_list = list(coverage) if coverage else [1.0]

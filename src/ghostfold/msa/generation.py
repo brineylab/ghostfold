@@ -3,10 +3,12 @@ import random
 import torch
 from typing import List, Dict, Any
 from transformers import T5Tokenizer, AutoModelForSeq2SeqLM
-from rich.console import Console
 
+from ghostfold.core.logging import get_logger
 from ghostfold.io.fasta import append_fasta
 from .model import generate_3di, generate_aa
+
+logger = get_logger("generation")
 
 
 def pad_sequence(seq: str, start_idx: int, full_len: int) -> str:
@@ -24,7 +26,6 @@ def _generate_and_save_sequences(
     num_return_sequences: int,
     decode_conf: Dict[str, Any],
     inference_batch_size: int,
-    console: Console,
 ) -> List[str]:
     """Generates sequences (3Di or AA) in batches and saves them to a FASTA file."""
     all_generated_sequences = []
@@ -60,7 +61,6 @@ def generate_sequences_for_coverage(
     device: torch.device,
     project_dir: str,
     inference_batch_size: int,
-    console: Console
 ) -> List[str]:
     """Generates and pads sequences for a given coverage."""
     chunk_len = int(coverage * full_len)
@@ -73,7 +73,7 @@ def generate_sequences_for_coverage(
 
     for decode_conf in decoding_configs:
         if full_len - chunk_len < 0:
-            console.print(f"[bold yellow]Warning:[/bold yellow] Chunk length ([yellow]{chunk_len}[/yellow]) is greater than full sequence length ([yellow]{full_len}[/yellow]). Skipping generation for this coverage.")
+            logger.warning(f"Chunk length ({chunk_len}) is greater than full sequence length ({full_len}). Skipping generation for this coverage.")
             continue
         start = random.randint(0, full_len - chunk_len)
         chunk = query_seq[start: start + chunk_len]
@@ -84,20 +84,20 @@ def generate_sequences_for_coverage(
                 aa_input=[chunk], seq_dir=seq_3di_dir, file_prefix='AA23Di',
                 tokenizer=tokenizer, model=model, device=device,
                 num_return_sequences=num_return_sequences, decode_conf=decode_conf,
-                inference_batch_size=inference_batch_size, console=console
+                inference_batch_size=inference_batch_size,
             )
             # Stage 2: 3Di -> AA
             backtranslated = _generate_and_save_sequences(
                 aa_input=fold_translations, seq_dir=seq_if_dir, file_prefix='3Di2AA',
                 tokenizer=tokenizer, model=model, device=device,
                 num_return_sequences=multiplier, decode_conf=decode_conf,
-                inference_batch_size=inference_batch_size, console=console
+                inference_batch_size=inference_batch_size,
             )
             padded = [pad_sequence(seq, start, full_len) for seq in backtranslated]
             all_backtranslated.extend(padded)
 
         except RuntimeError as e:
-            console.print(f"[bold red]OOM Error:[/bold red] on coverage [cyan]{coverage}[/cyan], chunk [cyan]{start}:{start + chunk_len}[/cyan] — skipping. Error: [red]{e}[/red]")
+            logger.error(f"OOM Error on coverage {coverage}, chunk {start}:{start + chunk_len} — skipping. Error: {e}")
             torch.cuda.empty_cache()
             continue
         finally:

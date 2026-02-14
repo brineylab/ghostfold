@@ -2,6 +2,10 @@ import random
 import string
 from pathlib import Path
 
+from ghostfold.core.logging import get_logger
+
+logger = get_logger("mask")
+
 
 def mask_a3m_file(
     input_path: Path, output_path: Path, mask_fraction: float
@@ -38,7 +42,7 @@ def mask_a3m_file(
         lines = input_path.read_text().splitlines()
 
         if mask_fraction == 0.0:
-            print(f"INFO: Mask fraction is 0. Copying '{input_path}' to '{output_path}'.")
+            logger.info(f"Mask fraction is 0. Copying '{input_path}' to '{output_path}'.")
             output_path.write_text("\n".join(lines) + "\n")
             return
 

@@ -7,8 +7,6 @@ from typing import List, Dict, Any, Optional
 from Bio.SeqRecord import SeqRecord
 from Bio import SeqIO
 from Bio.Seq import Seq
-from rich.console import Console
-from rich.panel import Panel
 from rich.progress import (
     Progress,
     SpinnerColumn,
@@ -18,11 +16,14 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
+from ghostfold.core.logging import get_console, get_logger
 from ghostfold.mutator import MSA_Mutator
 from ghostfold.io.fasta import write_fasta, create_project_dir, concatenate_fasta_files
 from ghostfold.msa.filters import filter_sequences
 from ghostfold.viz.plotting import generate_optional_plots
 from ghostfold.msa.generation import generate_sequences_for_coverage
+
+logger = get_logger("pipeline")
 
 # --- Constants ---
 MSA_COLORS: List[str] = [
@@ -32,9 +33,6 @@ MSA_COLORS: List[str] = [
 DEFAULT_COVERAGE_VALUES: List[float] = [1.0]
 DEFAULT_MUTATION_RATES_STR: str = '{"MEGABLAST": 5, "PAM250": 20, "BLOSUM62": 10}'
 MODEL_NAME: str = "Rostlab/ProstT5"
-
-# Initialize Rich Console
-console = Console()
 
 
 def process_sequence_run(
@@ -57,7 +55,7 @@ def process_sequence_run(
     plot_msa: bool,
     plot_coevolution: bool,
     inference_batch_size: int,
-    console: Console,
+    progress: Optional[Progress] = None,
 ) -> Dict[str, Optional[str]]:
     """Processes a single run for a given query sequence, with OOM handling."""
     import torch
@@ -65,16 +63,20 @@ def process_sequence_run(
     run_dir_name = f"run_{run_idx}"
     project_dir = os.path.join(base_project_dir, run_dir_name)
     os.makedirs(project_dir, exist_ok=True)
-    console.print(
-        Panel(
-            f"[bold blue]Starting independent run {run_idx} for sequence "
-            f"[green]'{header}'[/green] in '[yellow]{project_dir}[/yellow]'[/bold blue]",
-            expand=False,
-        )
+    logger.info(
+        f"Starting independent run {run_idx} for sequence '{header}' in '{project_dir}'"
     )
 
     img_dir = os.path.join(project_dir, "img")
     os.makedirs(img_dir, exist_ok=True)
+
+    # Add a coverage-level progress sub-task if progress bar is available
+    coverage_task = None
+    if progress is not None:
+        coverage_task = progress.add_task(
+            f"  {header} run {run_idx}",
+            total=len(coverage_list),
+        )
 
     total_backtranslated = [query_seq]
     try:
@@ -92,31 +94,39 @@ def process_sequence_run(
                 device=device,
                 project_dir=project_dir,
                 inference_batch_size=inference_batch_size,
-                console=console,
             )
             total_backtranslated.extend(generated_sequences)
             end_time_coverage = time.time()
-            console.print(
-                f"Generated sequences for coverage [cyan]{coverage}[/cyan] in "
-                f"[bold green]{end_time_coverage - start_time_coverage:.2f} seconds[/bold green]."
+            logger.info(
+                f"Generated sequences for coverage {coverage} in "
+                f"{end_time_coverage - start_time_coverage:.2f} seconds."
             )
+            if progress is not None and coverage_task is not None:
+                progress.update(coverage_task, advance=1)
 
     except RuntimeError as e:
         if "out of memory" in str(e).lower():
-            console.print(
-                f"[bold red]CUDA out of memory during sequence generation for run {run_idx}![/bold red]"
+            logger.error(
+                f"CUDA out of memory during sequence generation for run {run_idx}!"
             )
-            console.print(
-                "[yellow]This is common for large sequences or high batch sizes. "
-                "Try reducing 'inference_batch_size' in your config file.[/yellow]"
+            logger.error(
+                "This is common for large sequences or high batch sizes. "
+                "Try reducing 'inference_batch_size' in your config file."
             )
             torch.cuda.empty_cache()
+            if progress is not None and coverage_task is not None:
+                progress.remove_task(coverage_task)
             return {"filtered": None, "evolved": None}
         else:
-            console.print(
-                f"[bold red]A runtime error occurred during generation:[/bold red] {e}"
+            logger.error(
+                f"A runtime error occurred during generation: {e}"
             )
+            if progress is not None and coverage_task is not None:
+                progress.remove_task(coverage_task)
             return {"filtered": None, "evolved": None}
+
+    if progress is not None and coverage_task is not None:
+        progress.remove_task(coverage_task)
 
     unfiltered_path = os.path.join(project_dir, "unfiltered.fasta")
     write_fasta(
@@ -126,7 +136,7 @@ def process_sequence_run(
             for i, s in enumerate(total_backtranslated)
         ],
     )
-    console.print(f"Unfiltered sequences saved to [link={unfiltered_path}]{unfiltered_path}[/link]")
+    logger.info(f"Unfiltered sequences saved to {unfiltered_path}")
 
     sequences_for_unfiltered_plot = [
         s for s in total_backtranslated if len(s) == full_len
@@ -139,16 +149,15 @@ def process_sequence_run(
         hex_colors,
         plot_msa,
         plot_coevolution,
-        console,
     )
 
-    console.print("Filtering generated sequences...")
+    logger.info("Filtering generated sequences...")
     filtered_sequences = filter_sequences(total_backtranslated, full_len)
     filtered_path = os.path.join(project_dir, "filtered.fasta")
     if not filtered_sequences:
-        console.print(
-            "[bold yellow]No sequences passed the filter. Skipping coevolution "
-            "and mutation steps for this run.[/bold yellow]"
+        logger.warning(
+            "No sequences passed the filter. Skipping coevolution "
+            "and mutation steps for this run."
         )
         return {"filtered": None, "evolved": None}
 
@@ -159,9 +168,9 @@ def process_sequence_run(
             for i, s in enumerate(filtered_sequences)
         ],
     )
-    console.print(
-        f"Filtered sequences saved to [link={filtered_path}]{filtered_path}[/link]. "
-        f"[bold green]{len(filtered_sequences)}[/bold green] sequences passed the filter."
+    logger.info(
+        f"Filtered sequences saved to {filtered_path}. "
+        f"{len(filtered_sequences)} sequences passed the filter."
     )
     generate_optional_plots(
         filtered_sequences,
@@ -171,12 +180,11 @@ def process_sequence_run(
         hex_colors,
         plot_msa,
         plot_coevolution,
-        console,
     )
 
     evolved_path: Optional[str] = None
     if evolve_msa:
-        console.print("Attempting to evolve MSA...")
+        logger.info("Attempting to evolve MSA...")
         try:
             mutation_rates = json.loads(mutation_rates_str)
             mutator = MSA_Mutator(mutation_rates=mutation_rates)
@@ -189,8 +197,8 @@ def process_sequence_run(
                 evolved_sequences = [
                     str(record.seq) for record in SeqIO.parse(evolved_path, "fasta")
                 ]
-                console.print(
-                    f"Evolved sequences saved to [link={evolved_path}]{evolved_path}[/link]."
+                logger.info(
+                    f"Evolved sequences saved to {evolved_path}."
                 )
                 generate_optional_plots(
                     evolved_sequences,
@@ -200,23 +208,16 @@ def process_sequence_run(
                     hex_colors,
                     plot_msa,
                     plot_coevolution,
-                    console,
                 )
             else:
                 evolved_path = None
         except Exception as e:
-            console.print(
-                f"[bold red]An error occurred during MSA evolution:[/bold red] [red]{e}[/red]."
+            logger.error(
+                f"An error occurred during MSA evolution: {e}."
             )
             evolved_path = None
 
-    console.print(
-        Panel(
-            f"[bold green]Finished run {run_idx} for sequence "
-            f"[green]'{header}'[/green][/bold green]\n",
-            expand=False,
-        )
-    )
+    logger.info(f"Finished run {run_idx} for sequence '{header}'")
     return {"filtered": filtered_path, "evolved": evolved_path}
 
 
@@ -253,21 +254,7 @@ def run_pipeline(
     hex_colors: List[str] = MSA_COLORS,
     num_runs: int = 1,
 ) -> None:
-    """Runs the pseudoMSA generation pipeline with OOM handling for model loading.
-
-    Args:
-        project: The name of the main project directory.
-        query_fasta: Path to the query FASTA file.
-        config: The loaded configuration dictionary.
-        coverage_list: List of coverage values.
-        evolve_msa: Flag to enable MSA evolution.
-        mutation_rates_str: JSON string for mutation rates.
-        sample_percentage: Percentage of sequences to sample for evolution.
-        plot_msa: Flag to enable MSA plotting.
-        plot_coevolution: Flag to enable co-evolution plotting.
-        hex_colors: List of hex colors for plotting.
-        num_runs: Number of independent runs for each query sequence.
-    """
+    """Runs the pseudoMSA generation pipeline with OOM handling for model loading."""
     import torch
     from transformers import T5Tokenizer, AutoModelForSeq2SeqLM
 
@@ -275,10 +262,8 @@ def run_pipeline(
     torch.cuda.empty_cache()
 
     try:
-        console.print(
-            f"Loading T5 model and tokenizer from '[bold cyan]{MODEL_NAME}[/bold cyan]' "
-            f"on [magenta]{device.type.upper()}[/magenta]...",
-            style="bold",
+        logger.info(
+            f"Loading T5 model and tokenizer from '{MODEL_NAME}' on {device.type.upper()}..."
         )
         tokenizer = T5Tokenizer.from_pretrained(
             MODEL_NAME, do_lower_case=False, legacy=True
@@ -287,20 +272,18 @@ def run_pipeline(
         model.eval()
         if device.type == "cuda":
             model.half()
-        console.print("[bold green]Model and tokenizer loaded successfully.[/bold green]")
+        logger.info("Model and tokenizer loaded successfully.")
     except RuntimeError as e:
         if "out of memory" in str(e).lower():
-            console.print(
-                "[bold red]CUDA out of memory while loading the model![/bold red]"
-            )
-            console.print(
-                f"[yellow]The model '{MODEL_NAME}' is too large to fit on your GPU. "
-                "The pipeline cannot continue.[/yellow]"
+            logger.error("CUDA out of memory while loading the model!")
+            logger.error(
+                f"The model '{MODEL_NAME}' is too large to fit on your GPU. "
+                "The pipeline cannot continue."
             )
             return
         else:
-            console.print(
-                f"[bold red]A runtime error occurred during model loading:[/bold red] {e}"
+            logger.error(
+                f"A runtime error occurred during model loading: {e}"
             )
             return
 
@@ -308,8 +291,8 @@ def run_pipeline(
     decoding_configs = generate_decoding_configs(decoding_params)
 
     if not decoding_configs:
-        console.print(
-            "[bold red]Warning: No decoding configurations were generated from the config file.[/bold red]"
+        logger.warning(
+            "No decoding configurations were generated from the config file."
         )
 
     num_return_sequences: int = config.get("num_return_sequences", 5)
@@ -318,18 +301,20 @@ def run_pipeline(
 
     query_records = list(SeqIO.parse(query_fasta, "fasta"))
 
+    console = get_console()
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeRemainingColumn(),
+        TextColumn("{task.completed}/{task.total}"),
         TimeElapsedColumn(),
+        TimeRemainingColumn(),
         console=console,
         transient=False,
     ) as progress:
         overall_task = progress.add_task(
-            "[bold magenta]Overall Pipeline Progress[/bold magenta]",
+            "MSA Generation",
             total=len(query_records),
         )
 
@@ -337,15 +322,12 @@ def run_pipeline(
             header, query_seq = record.id, str(record.seq)
             progress.update(
                 overall_task,
-                description=f"[bold magenta]Processing:[/bold magenta] [green]{header}[/green]",
+                description=f"MSA Generation ({header})",
             )
 
             base_project_dir = create_project_dir(project, header)
             all_run_filtered_paths, all_run_evolved_paths = [], []
 
-            run_task = progress.add_task(
-                f"[bold yellow]Runs for {header}[/bold yellow]", total=num_runs
-            )
             for run_idx in range(1, num_runs + 1):
                 run_results = process_sequence_run(
                     query_seq=query_seq,
@@ -367,28 +349,17 @@ def run_pipeline(
                     plot_msa=plot_msa,
                     plot_coevolution=plot_coevolution,
                     inference_batch_size=inference_batch_size,
-                    console=console,
+                    progress=progress,
                 )
                 if run_results["filtered"]:
                     all_run_filtered_paths.append(run_results["filtered"])
                 if run_results["evolved"]:
                     all_run_evolved_paths.append(run_results["evolved"])
-                progress.update(run_task, advance=1)
-            progress.remove_task(run_task)
 
-            console.print(
-                f"\n--- [bold purple]Concatenating all FASTA files for "
-                f"'[green]{header}[/green]'[/bold purple] ---"
-            )
+            logger.info(f"Concatenating all FASTA files for '{header}'")
             pst_msa_path = os.path.join(base_project_dir, "pstMSA.fasta")
             files_to_concat = all_run_filtered_paths + all_run_evolved_paths
-            concatenate_fasta_files(files_to_concat, pst_msa_path, console)
+            concatenate_fasta_files(files_to_concat, pst_msa_path)
             progress.update(overall_task, advance=1)
-        progress.remove_task(overall_task)
 
-    console.print(
-        Panel(
-            "[bold green]All sequences processed. Pipeline finished![/bold green]",
-            expand=False,
-        )
-    )
+    logger.info("All sequences processed. Pipeline finished!")

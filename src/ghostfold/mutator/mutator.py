@@ -6,6 +6,10 @@ from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio import SeqIO
 
+from ghostfold.core.logging import get_logger
+
+logger = get_logger("mutator")
+
 # Placeholder for 3Di matrix, for a future feature.
 three_di_matrix = {
     ('A', 'A'): 5, ('A', 'C'): -1, ('A', 'D'): -2, ('A', 'E'): -1, ('A', 'F'): -2,
@@ -41,7 +45,7 @@ class MSA_Mutator:
                         "alphabet": list(matrix_data.alphabet),
                     }
                 except ValueError as e:
-                    print(f"Warning: Could not load matrix '{name}': {e}. Skipping this matrix.")
+                    logger.warning(f"Could not load matrix '{name}': {e}. Skipping this matrix.")
             else:
                 if not three_di_matrix:
                     raise ValueError("3Di matrix data is missing. Please define `three_di_matrix` in mutator.py.")
@@ -65,11 +69,11 @@ class MSA_Mutator:
 
             for key_in_input_rates in mutation_rates.keys():
                 if key_in_input_rates not in self.MATRIX_NAMES:
-                    print(f"Warning: Mutation rate provided for '{key_in_input_rates}', but this matrix could not be loaded or is not recognized. Ignoring this rate.")
+                    logger.warning(f"Mutation rate provided for '{key_in_input_rates}', but this matrix could not be loaded or is not recognized. Ignoring this rate.")
         else:
             self.mutation_rates = {name: 5.0 for name in self.MATRIX_NAMES}
 
-        print(f"Initialized MSA_Mutator with matrices: {self.MATRIX_NAMES} and mutation rates: {self.mutation_rates}")
+        logger.info(f"Initialized MSA_Mutator with matrices: {self.MATRIX_NAMES} and mutation rates: {self.mutation_rates}")
 
     def get_substitution_probs(self, residue, matrix_name):
         """Return substitution probabilities for a given residue using specified matrix."""
@@ -133,10 +137,10 @@ class MSA_Mutator:
     def evolve_msa(self, input_fasta_path, output_fasta_path, sample_percentage=0.5):
         """Reads an MSA, randomly samples sequences, introduces mutations,
         and writes the evolved MSA to a new FASTA file."""
-        print(f"Starting MSA evolution for {input_fasta_path}")
+        logger.info(f"Starting MSA evolution for {input_fasta_path}")
         original_records = list(SeqIO.parse(input_fasta_path, "fasta"))
         if not original_records:
-            print(f"No sequences found in {input_fasta_path}. Skipping mutation.")
+            logger.info(f"No sequences found in {input_fasta_path}. Skipping mutation.")
             with open(output_fasta_path, "w") as handle:
                 pass
             return
@@ -155,7 +159,7 @@ class MSA_Mutator:
         for record in original_records:
             if record.id in sampled_record_ids_set:
                 if not self.MATRIX_NAMES:
-                    print("No valid substitution matrices loaded. Cannot evolve sequences. Adding original record.")
+                    logger.warning("No valid substitution matrices loaded. Cannot evolve sequences. Adding original record.")
                     evolved_records_output.append(record)
                     continue
 
@@ -175,4 +179,4 @@ class MSA_Mutator:
 
         with open(output_fasta_path, "w") as handle:
             SeqIO.write(evolved_records_output, handle, "fasta")
-        print(f"Evolved MSA saved to {output_fasta_path}. {num_sequences_to_sample} sequences were sampled and evolved.")
+        logger.info(f"Evolved MSA saved to {output_fasta_path}. {num_sequences_to_sample} sequences were sampled and evolved.")

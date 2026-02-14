@@ -5,6 +5,10 @@ import os
 import shutil
 from pathlib import Path
 
+from ghostfold.core.logging import get_logger
+
+logger = get_logger("postprocess")
+
 
 def postprocess_msa_outputs(project_name: str) -> None:
     """Post-process MSA outputs: fix FASTA headers and create A3M copies.
@@ -34,7 +38,7 @@ def postprocess_msa_outputs(project_name: str) -> None:
         # Create .a3m copy
         a3m_path = fasta_path.replace(".fasta", ".a3m")
         shutil.copy2(fasta_path, a3m_path)
-        print(f"   [Processed MSA] {header_id}")
+        logger.info(f"   [Processed MSA] {header_id}")
 
 
 def cleanup_colabfold_outputs(subsample_dir: str) -> None:
@@ -53,12 +57,12 @@ def cleanup_colabfold_outputs(subsample_dir: str) -> None:
     preds_dir = os.path.join(subsample_dir, "preds")
     best_dir = os.path.join(subsample_dir, "best")
 
-    print(f"---\nStarting cleanup for: {subsample_dir}")
+    logger.info(f"Starting cleanup for: {subsample_dir}")
 
     os.makedirs(best_dir, exist_ok=True)
 
     if not os.path.isdir(preds_dir):
-        print(f"No preds directory found at {preds_dir}, skipping cleanup.")
+        logger.info(f"No preds directory found at {preds_dir}, skipping cleanup.")
         return
 
     for pred_name in os.listdir(preds_dir):
@@ -66,7 +70,7 @@ def cleanup_colabfold_outputs(subsample_dir: str) -> None:
         if not os.path.isdir(pred_dir):
             continue
 
-        print(f"   [Cleaning] {pred_name}")
+        logger.info(f"   [Cleaning] {pred_name}")
 
         # Create subdirectories
         scores_dir = os.path.join(pred_dir, "scores")
@@ -103,9 +107,9 @@ def cleanup_colabfold_outputs(subsample_dir: str) -> None:
         if rank_1_pdb and os.path.exists(rank_1_pdb):
             dest_pdb = os.path.join(best_dir, f"{pred_name}_ghostfold.pdb")
             shutil.copy2(rank_1_pdb, dest_pdb)
-            print(f"     -> Copied top PDB to best/{os.path.basename(dest_pdb)}")
+            logger.info(f"     -> Copied top PDB to best/{os.path.basename(dest_pdb)}")
 
-    print(f"Cleanup complete for {subsample_dir}.")
+    logger.info(f"Cleanup complete for {subsample_dir}.")
 
 
 def _is_recycle_pdb(fname: str) -> bool:

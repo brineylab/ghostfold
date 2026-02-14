@@ -1,9 +1,12 @@
 import os
 from typing import List
-from rich.console import Console
+
+from ghostfold.core.logging import get_logger
 
 from .msa_coverage import plot_msa_coverage
 from .coevolution import get_coevolution_numpy, plot_coevolution
+
+logger = get_logger("plotting")
 
 
 def generate_optional_plots(
@@ -14,11 +17,10 @@ def generate_optional_plots(
     custom_colors: List[str],
     plot_msa: bool,
     plot_coevolution_flag: bool,
-    console: Console
 ) -> None:
     """Generates MSA coverage and/or coevolution plots if requested."""
     if not sequences:
-        console.print(f"[yellow]No sequences provided for [bold]{base_name}[/bold] plots.[/yellow]")
+        logger.info(f"No sequences provided for {base_name} plots.")
         return
 
     # MSA coverage plot
@@ -26,13 +28,13 @@ def generate_optional_plots(
         sequences_for_coverage_plot = [seq for seq in sequences if len(seq) == full_len]
         if sequences_for_coverage_plot:
             msa_coverage_path = os.path.join(img_dir, f'msa_coverage_{base_name}.png')
-            console.print(f"Generating MSA coverage plot for [bold]{base_name}[/bold] sequences...")
+            logger.info(f"Generating MSA coverage plot for {base_name} sequences...")
             plot_msa_coverage(sequences_for_coverage_plot, save_path=msa_coverage_path, custom_colors=custom_colors)
-            console.print(f"MSA coverage plot saved to [link={msa_coverage_path}]{msa_coverage_path}[/link]")
+            logger.info(f"MSA coverage plot saved to {msa_coverage_path}")
         else:
-            console.print(f"[yellow]No [bold]{base_name}[/bold] sequences of query length [cyan]{full_len}[/cyan] found for MSA coverage plot.[/yellow]")
+            logger.info(f"No {base_name} sequences of query length {full_len} found for MSA coverage plot.")
     else:
-        console.print(f"[italic gray]MSA coverage plot generation skipped for [bold]{base_name}[/bold].[/italic gray]")
+        logger.debug(f"MSA coverage plot generation skipped for {base_name}.")
 
     # Coevolution plot
     if plot_coevolution_flag:
@@ -40,12 +42,12 @@ def generate_optional_plots(
         from Bio.Seq import Seq
         seq_records = [SeqRecord(Seq(s), id=f"seq_{i}", description="") for i, s in enumerate(sequences)]
         if len(seq_records) > 1:
-            console.print(f"Generating coevolution map from [bold]{base_name}[/bold] MSA.")
+            logger.info(f"Generating coevolution map from {base_name} MSA.")
             coevol_matrix = get_coevolution_numpy(seq_records)
             plot_path = os.path.join(img_dir, f'coevolution_{base_name}_msa.png')
             plot_coevolution(coevol_matrix, plot_path)
-            console.print(f"Coevolution map saved to [link={plot_path}]{plot_path}[/link]")
+            logger.info(f"Coevolution map saved to {plot_path}")
         else:
-            console.print(f"[yellow]Skipping coevolution plot for [bold]{base_name}[/bold] as fewer than 2 sequences are available.[/yellow]")
+            logger.info(f"Skipping coevolution plot for {base_name} as fewer than 2 sequences are available.")
     else:
-        console.print(f"[italic gray]Coevolution map generation skipped for [bold]{base_name}[/bold].[/italic gray]")
+        logger.debug(f"Coevolution map generation skipped for {base_name}.")
