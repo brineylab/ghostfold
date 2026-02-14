@@ -23,7 +23,18 @@ pip install torch --index-url https://download.pytorch.org/whl/cu121
 
 Refer to the [PyTorch installation guide](https://pytorch.org/get-started/locally/) for platform-specific instructions.
 
-### 2. Install GhostFold
+
+### 2. Install localcolabfold
+
+Operations that involve protein structure prediction (`ghostfold run` and `ghostfold fold`) require a working local ColabFold runtime. From the GhostFold repository root:
+
+```bash
+chmod +x scripts/install_localcolabfold.sh
+./scripts/install_localcolabfold.sh
+```
+
+
+### 3. Install GhostFold
 
 ```bash
 pip install ghostfold
@@ -35,16 +46,6 @@ For development:
 git clone https://github.com/brineylab/ghostfold.git
 cd ghostfold
 pip install -e ".[dev]"
-```
-
-### 3. Install localcolabfold (required for `ghostfold run` and `ghostfold fold`)
-
-`ghostfold run` and `ghostfold fold` require a working local ColabFold runtime.
-From the GhostFold repository root:
-
-```bash
-chmod +x scripts/install_localcolabfold.sh
-./scripts/install_localcolabfold.sh
 ```
 
 ---
