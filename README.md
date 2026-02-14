@@ -103,10 +103,6 @@ ghostfold run --project-name my_project --fasta-file query.fasta
 
 Combines all options from `msa` and `fold` commands.
 
-Both `ghostfold run` and `ghostfold fold` perform a ColabFold preflight check before
-starting work. If ColabFold is not installed or not functional, the command exits
-with setup instructions. Runtime resolution is pixi-first (localcolabfold), with
-legacy mamba fallback when available.
 
 ### Mask MSA files
 
