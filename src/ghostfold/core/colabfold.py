@@ -247,7 +247,6 @@ def run_colabfold(
                     for future in as_completed(futures):
                         future.result()
 
-                progress.remove_task(level_task)
                 logger.info(f"ColabFold jobs finished for subsample level {i + 1}.")
 
                 cleanup_colabfold_outputs(subsample_dir)

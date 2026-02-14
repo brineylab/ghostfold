@@ -84,6 +84,9 @@ def _msa_worker(
     """
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
 
+    import warnings
+    warnings.filterwarnings("ignore", category=FutureWarning, module="transformers")
+
     from ghostfold.core.logging import setup_worker_logging
 
     setup_worker_logging(log_file_path)

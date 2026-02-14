@@ -255,6 +255,9 @@ def run_pipeline(
     num_runs: int = 1,
 ) -> None:
     """Runs the pseudoMSA generation pipeline with OOM handling for model loading."""
+    import warnings
+    warnings.filterwarnings("ignore", category=FutureWarning, module="transformers")
+
     import torch
     from transformers import T5Tokenizer, AutoModelForSeq2SeqLM
 
