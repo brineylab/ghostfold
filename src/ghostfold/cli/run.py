@@ -15,11 +15,16 @@ def run(
         "--project-name",
         help="Name of the main project directory.",
     ),
-    fasta_file: Path = typer.Option(
+    fasta_path: Path = typer.Option(
         ...,
-        "--fasta-file",
+        "--fasta-path",
         exists=True,
-        help="Path to query FASTA file.",
+        help="Path to a FASTA file or directory containing FASTA files.",
+    ),
+    recursive: bool = typer.Option(
+        False,
+        "--recursive",
+        help="Recursively search directories for FASTA files.",
     ),
     config: Optional[Path] = typer.Option(
         None,
@@ -78,10 +83,11 @@ def run(
 
     run_parallel_msa(
         project_name=project_name,
-        fasta_file=str(fasta_file),
+        fasta_path=str(fasta_path),
         num_gpus=gpus,
         config_path=str(config) if config else None,
         log_file_path=str(log_path),
+        recursive=recursive,
     )
 
     run_colabfold(

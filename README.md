@@ -71,11 +71,12 @@ GhostFold provides a single command-line tool with five subcommands:
 ### Generate pseudoMSAs
 
 ```bash
-ghostfold msa --project-name my_project --fasta-file query.fasta
+ghostfold msa --project-name my_project --fasta-path query.fasta
 ```
 
 Options:
 - `--config PATH` — Custom YAML config (overrides bundled defaults)
+- `--recursive` — Recursively search directories for FASTA files
 - `--coverage FLOAT` — Coverage values (repeatable, default: 1.0)
 - `--num-runs INT` — Independent runs per sequence (default: 1)
 - `--evolve-msa` — Enable MSA evolution with substitution matrices
@@ -100,7 +101,7 @@ Options:
 ### Full pipeline (MSA + folding)
 
 ```bash
-ghostfold run --project-name my_project --fasta-file query.fasta
+ghostfold run --project-name my_project --fasta-path query.fasta
 ```
 
 Combines all options from `msa` and `fold` commands.
@@ -140,7 +141,7 @@ config = load_config("my_config.yaml")
 # Run MSA generation pipeline
 run_pipeline(
     project="my_project",
-    query_fasta="query.fasta",
+    fasta_path="query.fasta",
     config=config,
     coverage_list=[1.0],
     evolve_msa=True,

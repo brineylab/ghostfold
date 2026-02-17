@@ -33,7 +33,7 @@ def test_run_fails_preflight_before_msa(monkeypatch, tmp_path):
             "run",
             "--project-name",
             "my_project",
-            "--fasta-file",
+            "--fasta-path",
             str(fasta_file),
         ],
     )

@@ -10,6 +10,8 @@ from ghostfold.io.fasta import (
     append_fasta,
     create_project_dir,
     concatenate_fasta_files,
+    collect_fasta_paths,
+    read_fasta_from_path,
 )
 
 
@@ -100,3 +102,78 @@ class TestConcatenateFastaFiles:
         output = tmp_dir / "output.fasta"
         concatenate_fasta_files(["/nonexistent/file.fasta"], str(output))
         assert not output.exists()
+
+
+class TestCollectFastaPaths:
+    def test_single_file(self, sample_fasta):
+        paths = collect_fasta_paths(sample_fasta)
+        assert len(paths) == 1
+        assert paths[0] == sample_fasta
+
+    def test_file_with_recursive_warns(self, sample_fasta, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            paths = collect_fasta_paths(sample_fasta, recursive=True)
+        assert len(paths) == 1
+        assert "no effect" in caplog.text.lower()
+
+    def test_directory_non_recursive(self, fasta_dir):
+        paths = collect_fasta_paths(fasta_dir)
+        assert len(paths) == 2
+        names = {p.name for p in paths}
+        assert names == {"seq1.fasta", "seq2.fa"}
+
+    def test_directory_recursive(self, fasta_dir):
+        paths = collect_fasta_paths(fasta_dir, recursive=True)
+        assert len(paths) == 3
+        names = {p.name for p in paths}
+        assert names == {"seq1.fasta", "seq2.fa", "seq3.fasta"}
+
+    def test_non_recursive_ignores_subdirs(self, fasta_dir):
+        paths = collect_fasta_paths(fasta_dir, recursive=False)
+        names = {p.name for p in paths}
+        assert "seq3.fasta" not in names
+
+    def test_empty_dir_raises(self, tmp_dir):
+        empty = tmp_dir / "empty"
+        empty.mkdir()
+        with pytest.raises(ValueError, match="No FASTA files"):
+            collect_fasta_paths(empty)
+
+    def test_no_matching_extensions_raises(self, tmp_dir):
+        no_match = tmp_dir / "no_match"
+        no_match.mkdir()
+        (no_match / "data.txt").write_text(">seq\nACDEF\n")
+        with pytest.raises(ValueError, match="No FASTA files"):
+            collect_fasta_paths(no_match)
+
+    def test_nonexistent_path_raises(self):
+        with pytest.raises(FileNotFoundError):
+            collect_fasta_paths("/nonexistent/path")
+
+    def test_deterministic_ordering(self, fasta_dir):
+        paths1 = collect_fasta_paths(fasta_dir, recursive=True)
+        paths2 = collect_fasta_paths(fasta_dir, recursive=True)
+        assert paths1 == paths2
+        # Should be sorted
+        assert paths1 == sorted(paths1)
+
+
+class TestReadFastaFromPath:
+    def test_single_file(self, sample_fasta):
+        records = read_fasta_from_path(sample_fasta)
+        assert len(records) == 1
+        assert records[0].id == "test_seq"
+
+    def test_directory(self, fasta_dir):
+        records = read_fasta_from_path(fasta_dir)
+        assert len(records) == 2
+        ids = {r.id for r in records}
+        assert ids == {"seq1", "seq2"}
+
+    def test_recursive_directory(self, fasta_dir):
+        records = read_fasta_from_path(fasta_dir, recursive=True)
+        assert len(records) == 3
+        ids = {r.id for r in records}
+        assert ids == {"seq1", "seq2", "seq3"}

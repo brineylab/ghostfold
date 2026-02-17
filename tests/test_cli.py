@@ -34,7 +34,8 @@ class TestMsaCommand:
         result = runner.invoke(app, ["msa", "--help"])
         assert result.exit_code == 0
         assert "--project-name" in result.output
-        assert "--fasta-file" in result.output
+        assert "--fasta-path" in result.output
+        assert "--recursive" in result.output
 
     def test_missing_required(self):
         result = runner.invoke(app, ["msa"])
@@ -61,7 +62,8 @@ class TestRunCommand:
         result = runner.invoke(app, ["run", "--help"])
         assert result.exit_code == 0
         assert "--project-name" in result.output
-        assert "--fasta-file" in result.output
+        assert "--fasta-path" in result.output
+        assert "--recursive" in result.output
         assert "--subsample" in result.output
         assert "--colabfold-env" in result.output
         assert "--localcolabfold-dir" in result.output

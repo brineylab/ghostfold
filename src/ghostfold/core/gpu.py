@@ -73,9 +73,10 @@ def split_fasta(records: List[SeqRecord], output_dir: Path) -> List[Path]:
 def _msa_worker(
     gpu_id: int,
     project_name: str,
-    fasta_file: str,
+    fasta_path: str,
     config_path: Optional[str],
     log_file_path: str,
+    recursive: bool = False,
 ) -> None:
     """Worker function that runs the MSA pipeline on a specific GPU.
 
@@ -98,7 +99,7 @@ def _msa_worker(
 
     run_pipeline(
         project=project_name,
-        query_fasta=fasta_file,
+        fasta_path=fasta_path,
         config=config,
         coverage_list=[1.0],
         evolve_msa=True,
@@ -107,28 +108,32 @@ def _msa_worker(
         plot_msa=False,
         plot_coevolution=False,
         num_runs=1,
+        recursive=recursive,
     )
 
 
 def run_parallel_msa(
     project_name: str,
-    fasta_file: str,
+    fasta_path: str,
     num_gpus: int,
     config_path: Optional[str] = None,
     log_file_path: Optional[str] = None,
+    recursive: bool = False,
 ) -> None:
     """Generate MSAs in parallel across multiple GPUs, then post-process.
 
     Args:
         project_name: Name of the project directory.
-        fasta_file: Path to the input FASTA file.
+        fasta_path: Path to the input FASTA file or directory.
         num_gpus: Number of GPUs to use.
         config_path: Optional path to a user config YAML.
         log_file_path: Path to the log file for worker processes.
+        recursive: If True, search directories recursively for FASTA files.
     """
     from ghostfold.core.postprocess import postprocess_msa_outputs
+    from ghostfold.io.fasta import read_fasta_from_path
 
-    records = list(SeqIO.parse(fasta_file, "fasta"))
+    records = read_fasta_from_path(fasta_path, recursive=recursive)
     num_seqs = len(records)
 
     logger.info(f"Detected {num_gpus} GPUs and {num_seqs} sequences for project '{project_name}'.")
@@ -138,7 +143,7 @@ def run_parallel_msa(
 
     if num_seqs == 1:
         logger.info("Only one sequence found. Running on a single GPU.")
-        _msa_worker(0, project_name, fasta_file, config_path, log_file_path or "")
+        _msa_worker(0, project_name, fasta_path, config_path, log_file_path or "", recursive=recursive)
     else:
         temp_dir = Path(tempfile.mkdtemp(prefix="ghostfold_splits_"))
         logger.info(f"Splitting FASTA file into temporary directory: {temp_dir}")

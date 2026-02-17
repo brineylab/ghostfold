@@ -18,7 +18,7 @@ from rich.progress import (
 
 from ghostfold.core.logging import get_console, get_logger
 from ghostfold.mutator import MSA_Mutator
-from ghostfold.io.fasta import write_fasta, create_project_dir, concatenate_fasta_files
+from ghostfold.io.fasta import write_fasta, create_project_dir, concatenate_fasta_files, read_fasta_from_path
 from ghostfold.msa.filters import filter_sequences
 from ghostfold.viz.plotting import generate_optional_plots
 from ghostfold.msa.generation import generate_sequences_for_coverage
@@ -243,7 +243,7 @@ def generate_decoding_configs(params: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 def run_pipeline(
     project: str,
-    query_fasta: str,
+    fasta_path: str,
     config: dict,
     coverage_list: List[float],
     evolve_msa: bool,
@@ -253,6 +253,7 @@ def run_pipeline(
     plot_coevolution: bool,
     hex_colors: List[str] = MSA_COLORS,
     num_runs: int = 1,
+    recursive: bool = False,
 ) -> None:
     """Runs the pseudoMSA generation pipeline with OOM handling for model loading."""
     import warnings
@@ -302,7 +303,7 @@ def run_pipeline(
     multiplier: int = config.get("multiplier", 1)
     inference_batch_size: int = config.get("inference_batch_size", 4)
 
-    query_records = list(SeqIO.parse(query_fasta, "fasta"))
+    query_records = read_fasta_from_path(fasta_path, recursive=recursive)
 
     console = get_console()
 

@@ -19,6 +19,19 @@ def sample_fasta(tmp_dir):
 
 
 @pytest.fixture
+def fasta_dir(tmp_dir):
+    """Create a directory with FASTA files for testing, including a subdirectory."""
+    # Top-level files
+    (tmp_dir / "seq1.fasta").write_text(">seq1\nACDEF\n")
+    (tmp_dir / "seq2.fa").write_text(">seq2\nGHIKL\n")
+    # Subdirectory with another FASTA file
+    sub = tmp_dir / "subdir"
+    sub.mkdir()
+    (sub / "seq3.fasta").write_text(">seq3\nMNPQR\n")
+    return tmp_dir
+
+
+@pytest.fixture
 def sample_a3m(tmp_dir):
     """Create a minimal A3M file with a query and MSA entries."""
     a3m_path = tmp_dir / "test.a3m"

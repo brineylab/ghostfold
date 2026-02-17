@@ -12,6 +12,65 @@ from ghostfold.core.logging import get_logger
 
 logger = get_logger("fasta")
 
+FASTA_EXTENSIONS = {".fasta", ".fa"}
+
+
+def collect_fasta_paths(fasta_path: str | Path, recursive: bool = False) -> List[Path]:
+    """Collect FASTA file paths from a file or directory.
+
+    Args:
+        fasta_path: Path to a FASTA file or directory containing FASTA files.
+        recursive: If True, search directories recursively for FASTA files.
+
+    Returns:
+        Sorted, deduplicated list of FASTA file paths.
+
+    Raises:
+        FileNotFoundError: If the path does not exist.
+        ValueError: If a directory contains no matching FASTA files.
+    """
+    fasta_path = Path(fasta_path)
+    if not fasta_path.exists():
+        raise FileNotFoundError(f"Path not found: {fasta_path}")
+    if fasta_path.is_file():
+        if recursive:
+            logger.warning(
+                f"--recursive has no effect when the input path is a file: {fasta_path}"
+            )
+        return [fasta_path]
+    # Directory
+    paths: List[Path] = []
+    for ext in sorted(FASTA_EXTENSIONS):
+        pattern = f"**/*{ext}" if recursive else f"*{ext}"
+        paths.extend(fasta_path.glob(pattern))
+    paths = sorted(set(paths))
+    if not paths:
+        raise ValueError(
+            f"No FASTA files ({', '.join(sorted(FASTA_EXTENSIONS))}) "
+            f"found in directory: {fasta_path}"
+        )
+    return paths
+
+
+def read_fasta_from_path(
+    fasta_path: str | Path, recursive: bool = False
+) -> List[SeqRecord]:
+    """Read sequences from a FASTA file or directory of FASTA files.
+
+    Args:
+        fasta_path: Path to a FASTA file or directory containing FASTA files.
+        recursive: If True, search directories recursively for FASTA files.
+
+    Returns:
+        List of SeqRecord objects in deterministic order (sorted by file path,
+        then order within each file).
+    """
+    file_paths = collect_fasta_paths(fasta_path, recursive=recursive)
+    records: List[SeqRecord] = []
+    for fp in file_paths:
+        records.extend(read_fasta(fp))
+    return records
+
 
 def read_fasta(file_path: str | Path) -> List[SeqRecord]:
     """Reads sequences from a FASTA file."""

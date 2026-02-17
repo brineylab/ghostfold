@@ -12,7 +12,8 @@ app = typer.Typer(help="Generate pseudoMSAs from single sequences.")
 @app.callback(invoke_without_command=True)
 def msa(
     project_name: str = typer.Option(..., "--project-name", help="Name of the main project directory."),
-    fasta_file: Path = typer.Option(..., "--fasta-file", exists=True, help="Path to query FASTA file."),
+    fasta_path: Path = typer.Option(..., "--fasta-path", exists=True, help="Path to a FASTA file or directory containing FASTA files."),
+    recursive: bool = typer.Option(False, "--recursive", help="Recursively search directories for FASTA files."),
     config: Optional[Path] = typer.Option(None, "--config", exists=True, help="Path to YAML config (overrides defaults)."),
     coverage: Optional[List[float]] = typer.Option(None, "--coverage", help="Coverage values (can be specified multiple times). Default: 1.0"),
     num_runs: int = typer.Option(1, "--num-runs", help="Number of independent runs per query sequence."),
@@ -39,7 +40,7 @@ def msa(
 
     run_pipeline(
         project=project_name,
-        query_fasta=str(fasta_file),
+        fasta_path=str(fasta_path),
         config=cfg,
         coverage_list=coverage_list,
         evolve_msa=evolve_msa,
@@ -48,4 +49,5 @@ def msa(
         plot_msa=plot_msa_coverage,
         plot_coevolution=not no_coevolution_maps,
         num_runs=num_runs,
+        recursive=recursive,
     )
