@@ -1,5 +1,6 @@
 from typer.testing import CliRunner
 
+from ghostfold._version import __version__
 from ghostfold.cli.app import app
 
 runner = CliRunner()
@@ -15,7 +16,7 @@ class TestMainApp:
     def test_version(self):
         result = runner.invoke(app, ["--version"])
         assert result.exit_code == 0
-        assert "0.1.0" in result.output
+        assert __version__ in result.output
 
     def test_no_args_shows_help(self):
         result = runner.invoke(app, [])

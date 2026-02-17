@@ -34,3 +34,5 @@ jobs:
 
       - name: Run tests
         run: pytest --tb=short -q
+        env:
+          NO_COLOR: "1"
