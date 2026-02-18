@@ -22,8 +22,8 @@
 GhostFold requires PyTorch with CUDA support. Install the appropriate version for your system **before** installing GhostFold:
 
 ```bash
-# Example for CUDA 12.1 (adjust for your CUDA version)
-pip install torch --index-url https://download.pytorch.org/whl/cu121
+# Example for CUDA 12.8 (adjust for your CUDA version)
+pip install torch --index-url https://download.pytorch.org/whl/cu128
 ```
 
 Refer to the [PyTorch installation guide](https://pytorch.org/get-started/locally/) for platform-specific instructions.
@@ -73,6 +73,14 @@ See the [Hugging Face documentation](https://huggingface.co/docs/hub/security-to
 
 GhostFold provides a single command-line tool with five subcommands:
 
+### Full pipeline (pseudoMSA + structure prediction)
+
+```bash
+ghostfold run --project-name my_project --fasta-path query.fasta
+```
+
+Combines all options from the `msa` and `fold` commands (see below).
+
 ### Generate pseudoMSAs
 
 ```bash
@@ -103,14 +111,6 @@ Options:
 - `--localcolabfold-dir PATH` — Path to localcolabfold pixi checkout (default: `./localcolabfold`)
 - `--colabfold-env TEXT` — Legacy mamba env name for ColabFold fallback (default: `colabfold`)
 
-### Full pipeline (MSA + folding)
-
-```bash
-ghostfold run --project-name my_project --fasta-path query.fasta
-```
-
-Combines all options from `msa` and `fold` commands.
-
 
 ### Mask MSA files
 
@@ -137,13 +137,13 @@ ghostfold --version
 GhostFold can also be used as a Python library:
 
 ```python
-from ghostfold import run_pipeline, mask_a3m_file, calculate_neff, MSA_Mutator
+from ghostfold import run_pipeline
 from ghostfold.core.config import load_config
 
 # Load config with optional overrides
 config = load_config("my_config.yaml")
 
-# Run MSA generation pipeline
+# Run pseudoMSA generation pipeline
 run_pipeline(
     project="my_project",
     fasta_path="query.fasta",
