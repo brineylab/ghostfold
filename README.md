@@ -1,6 +1,5 @@
 ![](https://img.shields.io/pypi/v/ghostfold.svg?colorB=blue)
 [![tests](https://github.com/brineylab/ghostfold/actions/workflows/pytest.yaml/badge.svg)](https://github.com/brineylab/ghostfold/actions/workflows/pytest.yaml)
-![](https://img.shields.io/pypi/pyversions/ghostfold.svg)
 ![](https://img.shields.io/badge/license-MIT-blue.svg)
 
 # GhostFold
