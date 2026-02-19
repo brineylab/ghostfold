@@ -2,6 +2,7 @@ import os
 import itertools
 import json
 import time
+from contextlib import nullcontext
 from typing import List, Dict, Any, Optional
 
 from Bio.SeqRecord import SeqRecord
@@ -254,6 +255,7 @@ def run_pipeline(
     hex_colors: List[str] = MSA_COLORS,
     num_runs: int = 1,
     recursive: bool = False,
+    show_progress: bool = True,
 ) -> None:
     """Runs the pseudoMSA generation pipeline with OOM handling for model loading."""
     import warnings
@@ -307,27 +309,34 @@ def run_pipeline(
 
     console = get_console()
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("{task.completed}/{task.total}"),
-        TimeElapsedColumn(),
-        TimeRemainingColumn(),
-        console=console,
-        transient=False,
-    ) as progress:
-        overall_task = progress.add_task(
-            "MSA Generation",
-            total=len(query_records),
+    if show_progress:
+        progress_ctx = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("{task.completed}/{task.total}"),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            console=console,
+            transient=False,
         )
+    else:
+        progress_ctx = nullcontext()
+
+    with progress_ctx as progress:
+        if progress is not None:
+            overall_task = progress.add_task(
+                "MSA Generation",
+                total=len(query_records),
+            )
 
         for record in query_records:
             header, query_seq = record.id, str(record.seq)
-            progress.update(
-                overall_task,
-                description=f"MSA Generation ({header})",
-            )
+            if progress is not None:
+                progress.update(
+                    overall_task,
+                    description=f"MSA Generation ({header})",
+                )
 
             base_project_dir = create_project_dir(project, header)
             all_run_filtered_paths, all_run_evolved_paths = [], []
@@ -364,6 +373,7 @@ def run_pipeline(
             pst_msa_path = os.path.join(base_project_dir, "pstMSA.fasta")
             files_to_concat = all_run_filtered_paths + all_run_evolved_paths
             concatenate_fasta_files(files_to_concat, pst_msa_path)
-            progress.update(overall_task, advance=1)
+            if progress is not None:
+                progress.update(overall_task, advance=1)
 
     logger.info("All sequences processed. Pipeline finished!")

@@ -109,6 +109,7 @@ def _msa_worker(
         plot_coevolution=False,
         num_runs=1,
         recursive=recursive,
+        show_progress=False,
     )
 
 
@@ -170,7 +171,7 @@ def run_parallel_msa(
                     gpu_id = i % max_jobs
                     future = executor.submit(
                         _msa_worker, gpu_id, project_name, str(split_path),
-                        config_path, log_file_path or "",
+                        config_path, log_file_path or "", recursive,
                     )
                     futures[future] = split_path
 
