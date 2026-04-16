@@ -2,7 +2,6 @@ import concurrent.futures
 import csv
 import math
 import pathlib
-import sys
 from typing import List, Optional, Tuple
 
 import numpy as np
@@ -14,6 +13,9 @@ logger = get_logger("neff")
 
 def parse_a3m(file_path: pathlib.Path) -> List[str]:
     """Parses a single a3m file to extract all sequences.
+
+    Uses list accumulation instead of string concatenation to avoid O(n²)
+    behavior for sequences spanning many lines.
 
     Args:
         file_path: The path to the .a3m file.
@@ -28,7 +30,7 @@ def parse_a3m(file_path: pathlib.Path) -> List[str]:
         raise FileNotFoundError(f"Error: The file '{file_path}' was not found.")
 
     sequences: List[str] = []
-    current_sequence: str = ""
+    current_parts: List[str] = []
 
     try:
         with open(file_path, 'r') as f:
@@ -37,13 +39,15 @@ def parse_a3m(file_path: pathlib.Path) -> List[str]:
                 if not line:
                     continue
                 if line.startswith('>'):
-                    if current_sequence:
-                        sequences.append(current_sequence)
-                    current_sequence = ""
+                    if current_parts:
+                        sequences.append("".join(current_parts))
+                    current_parts = []
                 else:
-                    current_sequence += "".join(filter(lambda x: x.isalpha() or x == '-', line))
-            if current_sequence:
-                sequences.append(current_sequence)
+                    current_parts.append(
+                        "".join(c for c in line if c.isupper() or c == '-')
+                    )
+            if current_parts:
+                sequences.append("".join(current_parts))
         return sequences
     except Exception as e:
         logger.error(f"An error occurred while reading {file_path}: {e}")
@@ -74,18 +78,28 @@ def calculate_neff(sequences: List[str], identity_threshold: float = 0.5) -> flo
     if not (0.0 <= identity_threshold <= 1.0):
         raise ValueError("Error: identity_threshold must be between 0.0 and 1.0.")
 
+    _NEFF_CHUNK = 256  # rows per chunk; caps peak memory at chunk × N × L bytes
+
     try:
-        # Fix 1: vectorized O(n²) via NumPy broadcasting — ~50x faster than Python loop
         msa_arr = np.frombuffer(
             b"".join(s.encode() for s in sequences), dtype=np.uint8
         ).reshape(N, L)
-        # pairwise identity: (N, N) float matrix
-        identity = (msa_arr[:, None, :] == msa_arr[None, :, :]).mean(axis=2)
-        # exclude self-comparison
-        above_threshold = identity >= identity_threshold
-        np.fill_diagonal(above_threshold, False)
-        similar_counts = above_threshold.sum(axis=1)
-        weights = 1.0 / (1.0 + similar_counts.astype(float))
+
+        weights = np.zeros(N, dtype=np.float64)
+        for i in range(0, N, _NEFF_CHUNK):
+            block = msa_arr[i:i + _NEFF_CHUNK]          # (chunk, L)
+            # identity: (chunk, N) — fraction of positions that match
+            id_mat = (block[:, None, :] == msa_arr[None, :, :]).mean(axis=2)
+            above = id_mat >= identity_threshold          # (chunk, N) bool
+
+            # zero out self-comparisons on the diagonal block
+            chunk_size = block.shape[0]
+            row_idx = np.arange(chunk_size)
+            col_idx = np.arange(i, i + chunk_size)
+            above[row_idx, col_idx] = False
+
+            weights[i:i + chunk_size] = 1.0 / (1.0 + above.sum(axis=1).astype(float))
+
         return (1.0 / math.sqrt(L)) * float(weights.sum())
     except Exception as e:
         logger.error(f"An unexpected error occurred during Neff calculation: {e}")

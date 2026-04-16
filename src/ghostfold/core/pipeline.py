@@ -1,8 +1,6 @@
 import os
 import itertools
 import json
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import nullcontext
 from typing import List, Dict, Any, Optional, Tuple
 
@@ -18,12 +16,14 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
+from transformers import T5Tokenizer, AutoModelForSeq2SeqLM
+
 from ghostfold.core.logging import get_console, get_logger
 from ghostfold.mutator import MSA_Mutator
 from ghostfold.io.fasta import write_fasta, create_project_dir, concatenate_fasta_files, read_fasta_from_path
 from ghostfold.msa.filters import filter_sequences
 from ghostfold.viz.plotting import generate_optional_plots
-from ghostfold.msa.generation import generate_sequences_for_coverage
+from ghostfold.msa.generation import generate_sequences_for_coverages_batched
 
 logger = get_logger("pipeline")
 
@@ -36,13 +36,18 @@ DEFAULT_COVERAGE_VALUES: List[float] = [1.0]
 DEFAULT_MUTATION_RATES_STR: str = '{"MEGABLAST": 5, "PAM250": 20, "BLOSUM62": 10}'
 MODEL_NAME: str = "Rostlab/ProstT5"
 
-# Fix 7: module-level cache so repeated run_pipeline calls skip model reload
+# Module-level model cache: key is "{model_name}:{device_type}"
 _MODEL_CACHE: Dict[str, Tuple[Any, Any]] = {}
 
 
 def _load_model(device: Any, model_name: str = MODEL_NAME) -> Tuple[Any, Any]:
-    """Return (tokenizer, model) for the given device, loading only on first call."""
-    from transformers import T5Tokenizer, AutoModelForSeq2SeqLM
+    """Return (tokenizer, model) for the given device, loading only on first call.
+
+    Uses bfloat16 on Ampere+ CUDA (wider dynamic range, no NaN issues) and
+    falls back to float16 on older GPUs. Applies torch.compile in
+    reduce-overhead mode for repeated inference speedup.
+    """
+    import torch
 
     key = f"{model_name}:{device.type}"
     if key not in _MODEL_CACHE:
@@ -51,7 +56,19 @@ def _load_model(device: Any, model_name: str = MODEL_NAME) -> Tuple[Any, Any]:
         model = AutoModelForSeq2SeqLM.from_pretrained(model_name).to(device)
         model.eval()
         if device.type == "cuda":
-            model.half()
+            if torch.cuda.is_bf16_supported():
+                model.to(torch.bfloat16)
+                logger.info("Using bfloat16 precision (Ampere+).")
+            else:
+                model.half()
+                logger.info("Using float16 precision (pre-Ampere fallback).")
+            try:
+                import torch._dynamo
+                torch._dynamo.config.suppress_errors = True
+                model = torch.compile(model, mode="reduce-overhead")
+                logger.info("Model compiled with torch.compile (reduce-overhead).")
+            except Exception as e:
+                logger.warning(f"torch.compile unavailable, using eager mode: {e}")
         logger.info("Model and tokenizer loaded successfully.")
         _MODEL_CACHE[key] = (tokenizer, model)
     return _MODEL_CACHE[key]
@@ -102,34 +119,22 @@ def process_sequence_run(
 
     total_backtranslated = [query_seq]
     try:
-        # Fix 6: parallelize independent coverage levels via ThreadPoolExecutor.
-        # PyTorch serializes CUDA ops to the default stream so GPU access is safe;
-        # file I/O and CPU work overlap across threads for a modest throughput gain.
-        def _run_coverage(coverage: float) -> List[str]:
-            start_time_coverage = time.time()
-            seqs = generate_sequences_for_coverage(
-                query_seq=query_seq,
-                full_len=full_len,
-                decoding_configs=decoding_configs,
-                num_return_sequences=num_return_sequences,
-                multiplier=multiplier,
-                coverage=coverage,
-                model=model,
-                tokenizer=tokenizer,
-                device=device,
-                project_dir=project_dir,
-                inference_batch_size=inference_batch_size,
-            )
-            elapsed = time.time() - start_time_coverage
-            logger.info(f"Generated sequences for coverage {coverage} in {elapsed:.2f} seconds.")
-            return seqs
-
-        with ThreadPoolExecutor(max_workers=len(coverage_list)) as ex:
-            futures = {ex.submit(_run_coverage, cov): cov for cov in coverage_list}
-            for fut in as_completed(futures):
-                total_backtranslated.extend(fut.result())
-                if progress is not None and coverage_task is not None:
-                    progress.update(coverage_task, advance=1)
+        generated = generate_sequences_for_coverages_batched(
+            query_seq=query_seq,
+            full_len=full_len,
+            decoding_configs=decoding_configs,
+            num_return_sequences=num_return_sequences,
+            multiplier=multiplier,
+            coverage_list=coverage_list,
+            model=model,
+            tokenizer=tokenizer,
+            device=device,
+            project_dir=project_dir,
+            inference_batch_size=inference_batch_size,
+        )
+        total_backtranslated.extend(generated)
+        if progress is not None and coverage_task is not None:
+            progress.update(coverage_task, advance=len(coverage_list))
 
     except RuntimeError as e:
         if "out of memory" in str(e).lower():
@@ -137,17 +142,17 @@ def process_sequence_run(
                 f"CUDA out of memory during sequence generation for run {run_idx}!"
             )
             logger.error(
-                "This is common for large sequences or high batch sizes. "
                 "Try reducing 'inference_batch_size' in your config file."
             )
-            torch.cuda.empty_cache()
+            try:
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
             if progress is not None and coverage_task is not None:
                 progress.remove_task(coverage_task)
             return {"filtered": None, "evolved": None}
         else:
-            logger.error(
-                f"A runtime error occurred during generation: {e}"
-            )
+            logger.error(f"A runtime error occurred during generation: {e}")
             if progress is not None and coverage_task is not None:
                 progress.remove_task(coverage_task)
             return {"filtered": None, "evolved": None}
@@ -293,7 +298,6 @@ def run_pipeline(
     torch.cuda.empty_cache()
 
     try:
-        # Fix 7: _load_model caches tokenizer+model across run_pipeline calls
         tokenizer, model = _load_model(device)
     except RuntimeError as e:
         if "out of memory" in str(e).lower():

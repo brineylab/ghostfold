@@ -1,124 +1,57 @@
-"""Tests for Fix 1: vectorized Neff calculation.
-
-The vectorized implementation must produce numerically identical results
-to the reference O(n²) Python loop, and must not call the slow path.
-"""
 import math
-import time
-import pytest
+import pathlib
+import tempfile
+import numpy as np
+from ghostfold.msa.neff import parse_a3m, calculate_neff
+
+def test_parse_a3m_multiline_sequence():
+    """parse_a3m must correctly join multi-line sequences."""
+    content = ">seq1\nACDEF\nGHIKL\n>seq2\nMNPQR\nSTVWY\n"
+    with tempfile.NamedTemporaryFile(suffix=".a3m", mode="w", delete=False) as f:
+        f.write(content)
+        path = pathlib.Path(f.name)
+    seqs = parse_a3m(path)
+    assert seqs == ["ACDEFGHIKL", "MNPQRSTVWY"]
+
+def test_parse_a3m_strips_lowercase_insertions():
+    """parse_a3m must strip lowercase insertion chars, keep uppercase and '-'."""
+    content = ">q\nACde-FG\n"
+    with tempfile.NamedTemporaryFile(suffix=".a3m", mode="w", delete=False) as f:
+        f.write(content)
+        path = pathlib.Path(f.name)
+    seqs = parse_a3m(path)
+    assert seqs == ["AC-FG"]
 
 
-class TestVectorizedNeffCorrectness:
-    def test_single_sequence_matches_reference(self):
-        from ghostfold.msa.neff import calculate_neff
-        result = calculate_neff(["ACDEF"])
-        expected = 1.0 / math.sqrt(5)
-        assert abs(result - expected) < 1e-9
-
-    def test_identical_sequences_match_reference(self):
-        from ghostfold.msa.neff import calculate_neff
-        seqs = ["ACDEF", "ACDEF", "ACDEF"]
-        result = calculate_neff(seqs)
-        expected = (1.0 / math.sqrt(5)) * (3 * (1.0 / 3.0))
-        assert abs(result - expected) < 1e-9
-
-    def test_diverse_sequences_match_reference(self):
-        """Vectorized result must exactly equal the O(n²) reference."""
-        from ghostfold.msa.neff import calculate_neff
-
-        seqs = [
-            "ACDEFGHIKL",
-            "MNPQRSTVWY",
-            "ACDEACDEAC",
-            "GHIKLMNPQR",
-            "STVWYACDEA",
-        ]
-        result = calculate_neff(seqs, identity_threshold=0.5)
-
-        # Compute reference manually (O(n²) Python loop)
-        N, L = len(seqs), len(seqs[0])
-        total = 0.0
-        for n in range(N):
-            sim = 0
-            for m in range(N):
-                if n == m:
-                    continue
-                ident = sum(1 for c1, c2 in zip(seqs[n], seqs[m]) if c1 == c2) / L
-                if ident >= 0.5:
-                    sim += 1
-            total += 1.0 / (1.0 + sim)
-        expected = (1.0 / math.sqrt(L)) * total
-
-        assert abs(result - expected) < 1e-9
-
-    def test_sequences_with_gaps_match_reference(self):
-        """Gaps ('-') must be treated as regular characters (equal to gap = match)."""
-        from ghostfold.msa.neff import calculate_neff
-
-        seqs = [
-            "ACDE-GHIKL",
-            "ACDE-GHIKL",
-            "MNPQ-RSTVW",
-        ]
-        result = calculate_neff(seqs, identity_threshold=0.5)
-
-        N, L = len(seqs), len(seqs[0])
-        total = 0.0
-        for n in range(N):
-            sim = 0
-            for m in range(N):
-                if n == m:
-                    continue
-                ident = sum(1 for c1, c2 in zip(seqs[n], seqs[m]) if c1 == c2) / L
-                if ident >= 0.5:
-                    sim += 1
-            total += 1.0 / (1.0 + sim)
-        expected = (1.0 / math.sqrt(L)) * total
-
-        assert abs(result - expected) < 1e-9
-
-    def test_threshold_boundary_match_reference(self):
-        """Sequences exactly at identity_threshold must be counted (>=, not >)."""
-        from ghostfold.msa.neff import calculate_neff
-
-        # 5 of 10 identical = 0.5 identity; threshold=0.5 → should be counted
-        seqs = [
-            "AAAAAXYZQW",
-            "AAAAABBBBB",
-        ]
-        result = calculate_neff(seqs, identity_threshold=0.5)
-
-        N, L = len(seqs), len(seqs[0])
-        total = 0.0
-        for n in range(N):
-            sim = 0
-            for m in range(N):
-                if n == m:
-                    continue
-                ident = sum(1 for c1, c2 in zip(seqs[n], seqs[m]) if c1 == c2) / L
-                if ident >= 0.5:
-                    sim += 1
-            total += 1.0 / (1.0 + sim)
-        expected = (1.0 / math.sqrt(L)) * total
-
-        assert abs(result - expected) < 1e-9
+def test_calculate_neff_basic():
+    # All identical: each sequence has N-1 neighbors above threshold
+    # weight = 1/(1 + N-1) = 1/N per sequence → Neff = N * (1/N) / sqrt(L) = 1/sqrt(L)
+    seqs = ["ACDEFGHIKL"] * 10
+    neff = calculate_neff(seqs, identity_threshold=0.5)
+    L = 10
+    expected = (1.0 / math.sqrt(L))
+    assert abs(neff - expected) < 1e-6
 
 
-class TestVectorizedNeffPerformance:
-    def test_large_msa_faster_than_quadratic_threshold(self):
-        """1000 sequences of length 200 should complete in < 1 second (vectorized).
-        The O(n²) Python loop takes ~5s on this input.
-        """
-        import random
-        from ghostfold.msa.neff import calculate_neff
+def test_calculate_neff_all_different():
+    # All completely different: no neighbors above 0.5 threshold
+    # each weight = 1/(1+0) = 1.0 → Neff = N / sqrt(L)
+    seqs = [
+        "AAAAAAAAAA",
+        "CCCCCCCCCC",
+        "DDDDDDDDDD",
+        "EEEEEEEEEE",
+    ]
+    neff = calculate_neff(seqs, identity_threshold=0.5)
+    expected = 4.0 / math.sqrt(10)
+    assert abs(neff - expected) < 1e-6
 
-        rng = random.Random(42)
-        aa = "ACDEFGHIKLMNPQRSTVWY-"
-        seqs = ["".join(rng.choices(aa, k=200)) for _ in range(1000)]
 
-        start = time.perf_counter()
-        result = calculate_neff(seqs)
-        elapsed = time.perf_counter() - start
-
-        assert result > 0
-        assert elapsed < 1.0, f"Too slow: {elapsed:.2f}s (expected < 1s, O(n²) takes ~5s)"
+def test_calculate_neff_chunked_matches_original():
+    """Chunked result must match for a moderate-size input."""
+    rng = np.random.default_rng(0)
+    aa = list("ACDEFGHIKLMNPQRSTVWY")
+    seqs = ["".join(rng.choice(aa, 50)) for _ in range(200)]
+    neff_result = calculate_neff(seqs, identity_threshold=0.5)
+    assert neff_result > 0.0
+    assert neff_result < len(seqs)

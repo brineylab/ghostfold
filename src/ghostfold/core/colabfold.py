@@ -7,7 +7,7 @@ import subprocess
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence
 
 from rich.progress import (
     Progress,
@@ -65,6 +65,47 @@ def _get_colabfold_total_models(params: list) -> int:
     return num_models * num_seeds
 
 
+def _build_colabfold_cmd(
+    msa_file: str,
+    output_dir: str,
+    max_seq: int,
+    max_extra_seq: int,
+    launcher_prefix: Sequence[str],
+    extra_colabfold_params: Optional[dict] = None,
+) -> List[str]:
+    """Build the colabfold_batch command list, applying any param overrides."""
+    params: Dict[str, Optional[str]] = {}
+    i = 0
+    while i < len(COLABFOLD_PARAMS):
+        flag = COLABFOLD_PARAMS[i]
+        if i + 1 >= len(COLABFOLD_PARAMS) or COLABFOLD_PARAMS[i + 1].startswith("--"):
+            params[flag] = None
+            i += 1
+        else:
+            params[flag] = COLABFOLD_PARAMS[i + 1]
+            i += 2
+
+    if extra_colabfold_params:
+        for flag, value in extra_colabfold_params.items():
+            params[flag] = value
+
+    flat_params: List[str] = []
+    for flag, value in params.items():
+        flat_params.append(flag)
+        if value is not None:
+            flat_params.append(value)
+
+    return [
+        *launcher_prefix,
+        "colabfold_batch",
+        msa_file,
+        output_dir,
+        "--max-seq", str(max_seq),
+        "--max-extra-seq", str(max_extra_seq),
+        *flat_params,
+    ]
+
+
 def _run_colabfold_subprocess(
     gpu_id: int,
     msa_file: str,
@@ -77,6 +118,7 @@ def _run_colabfold_subprocess(
     progress: Optional[Progress] = None,
     task_id: Optional[TaskID] = None,
     timeout: int = 3600,
+    extra_colabfold_params: Optional[dict] = None,
 ) -> None:
     """Run a single colabfold_batch subprocess on a specific GPU.
 
@@ -90,15 +132,14 @@ def _run_colabfold_subprocess(
     if cache_home is not None:
         env["XDG_CACHE_HOME"] = cache_home
 
-    cmd = [
-        *launcher_prefix,
-        "colabfold_batch",
-        msa_file,
-        output_dir,
-        "--max-seq", str(max_seq),
-        "--max-extra-seq", str(max_extra_seq),
-        *COLABFOLD_PARAMS,
-    ]
+    cmd = _build_colabfold_cmd(
+        msa_file=msa_file,
+        output_dir=output_dir,
+        max_seq=max_seq,
+        max_extra_seq=max_extra_seq,
+        launcher_prefix=launcher_prefix,
+        extra_colabfold_params=extra_colabfold_params,
+    )
 
     proc = subprocess.Popen(
         cmd,
@@ -138,6 +179,7 @@ def run_colabfold(
     mask_fraction: Optional[float] = None,
     colabfold_env: str = DEFAULT_COLABFOLD_ENV,
     localcolabfold_dir: Path | str | None = None,
+    extra_colabfold_params: Optional[dict] = None,
 ) -> None:
     """Run ColabFold structure prediction on generated MSAs.
 
@@ -204,7 +246,18 @@ def run_colabfold(
         max_seq_vals = DEFAULT_MAX_SEQ
         max_extra_seq_vals = DEFAULT_MAX_EXTRA_SEQ
 
-    models_per_file = _get_colabfold_total_models(COLABFOLD_PARAMS)
+    effective_params = list(COLABFOLD_PARAMS)
+    if extra_colabfold_params:
+        for flag, value in extra_colabfold_params.items():
+            if flag in effective_params:
+                idx = effective_params.index(flag)
+                if idx + 1 < len(effective_params) and not effective_params[idx + 1].startswith("--"):
+                    effective_params[idx + 1] = value
+                else:
+                    effective_params.insert(idx + 1, value)
+            else:
+                effective_params.extend([flag, value])
+    models_per_file = _get_colabfold_total_models(effective_params)
     console = get_console()
 
     try:
@@ -260,6 +313,7 @@ def run_colabfold(
                             cache_home,
                             progress,
                             level_task,
+                            extra_colabfold_params,
                         )
                         futures.append(future)
 
