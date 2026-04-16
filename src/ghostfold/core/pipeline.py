@@ -2,8 +2,9 @@ import os
 import itertools
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import nullcontext
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 from Bio.SeqRecord import SeqRecord
 from Bio import SeqIO
@@ -34,6 +35,26 @@ MSA_COLORS: List[str] = [
 DEFAULT_COVERAGE_VALUES: List[float] = [1.0]
 DEFAULT_MUTATION_RATES_STR: str = '{"MEGABLAST": 5, "PAM250": 20, "BLOSUM62": 10}'
 MODEL_NAME: str = "Rostlab/ProstT5"
+
+# Fix 7: module-level cache so repeated run_pipeline calls skip model reload
+_MODEL_CACHE: Dict[str, Tuple[Any, Any]] = {}
+
+
+def _load_model(device: Any, model_name: str = MODEL_NAME) -> Tuple[Any, Any]:
+    """Return (tokenizer, model) for the given device, loading only on first call."""
+    from transformers import T5Tokenizer, AutoModelForSeq2SeqLM
+
+    key = f"{model_name}:{device.type}"
+    if key not in _MODEL_CACHE:
+        logger.info(f"Loading T5 model and tokenizer from '{model_name}' on {device.type.upper()}...")
+        tokenizer = T5Tokenizer.from_pretrained(model_name, do_lower_case=False, legacy=True)
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_name).to(device)
+        model.eval()
+        if device.type == "cuda":
+            model.half()
+        logger.info("Model and tokenizer loaded successfully.")
+        _MODEL_CACHE[key] = (tokenizer, model)
+    return _MODEL_CACHE[key]
 
 
 def process_sequence_run(
@@ -81,9 +102,12 @@ def process_sequence_run(
 
     total_backtranslated = [query_seq]
     try:
-        for coverage in coverage_list:
+        # Fix 6: parallelize independent coverage levels via ThreadPoolExecutor.
+        # PyTorch serializes CUDA ops to the default stream so GPU access is safe;
+        # file I/O and CPU work overlap across threads for a modest throughput gain.
+        def _run_coverage(coverage: float) -> List[str]:
             start_time_coverage = time.time()
-            generated_sequences = generate_sequences_for_coverage(
+            seqs = generate_sequences_for_coverage(
                 query_seq=query_seq,
                 full_len=full_len,
                 decoding_configs=decoding_configs,
@@ -96,14 +120,16 @@ def process_sequence_run(
                 project_dir=project_dir,
                 inference_batch_size=inference_batch_size,
             )
-            total_backtranslated.extend(generated_sequences)
-            end_time_coverage = time.time()
-            logger.info(
-                f"Generated sequences for coverage {coverage} in "
-                f"{end_time_coverage - start_time_coverage:.2f} seconds."
-            )
-            if progress is not None and coverage_task is not None:
-                progress.update(coverage_task, advance=1)
+            elapsed = time.time() - start_time_coverage
+            logger.info(f"Generated sequences for coverage {coverage} in {elapsed:.2f} seconds.")
+            return seqs
+
+        with ThreadPoolExecutor(max_workers=len(coverage_list)) as ex:
+            futures = {ex.submit(_run_coverage, cov): cov for cov in coverage_list}
+            for fut in as_completed(futures):
+                total_backtranslated.extend(fut.result())
+                if progress is not None and coverage_task is not None:
+                    progress.update(coverage_task, advance=1)
 
     except RuntimeError as e:
         if "out of memory" in str(e).lower():
@@ -262,23 +288,13 @@ def run_pipeline(
     warnings.filterwarnings("ignore", category=FutureWarning, module="transformers")
 
     import torch
-    from transformers import T5Tokenizer, AutoModelForSeq2SeqLM
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.cuda.empty_cache()
 
     try:
-        logger.info(
-            f"Loading T5 model and tokenizer from '{MODEL_NAME}' on {device.type.upper()}..."
-        )
-        tokenizer = T5Tokenizer.from_pretrained(
-            MODEL_NAME, do_lower_case=False, legacy=True
-        )
-        model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME).to(device)
-        model.eval()
-        if device.type == "cuda":
-            model.half()
-        logger.info("Model and tokenizer loaded successfully.")
+        # Fix 7: _load_model caches tokenizer+model across run_pipeline calls
+        tokenizer, model = _load_model(device)
     except RuntimeError as e:
         if "out of memory" in str(e).lower():
             logger.error("CUDA out of memory while loading the model!")

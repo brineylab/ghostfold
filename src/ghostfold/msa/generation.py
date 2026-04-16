@@ -78,29 +78,44 @@ def generate_sequences_for_coverage(
         start = random.randint(0, full_len - chunk_len)
         chunk = query_seq[start: start + chunk_len]
 
-        try:
-            # Stage 1: AA -> 3Di
-            fold_translations = _generate_and_save_sequences(
-                aa_input=[chunk], seq_dir=seq_3di_dir, file_prefix='AA23Di',
-                tokenizer=tokenizer, model=model, device=device,
-                num_return_sequences=num_return_sequences, decode_conf=decode_conf,
-                inference_batch_size=inference_batch_size,
-            )
-            # Stage 2: 3Di -> AA
-            backtranslated = _generate_and_save_sequences(
-                aa_input=fold_translations, seq_dir=seq_if_dir, file_prefix='3Di2AA',
-                tokenizer=tokenizer, model=model, device=device,
-                num_return_sequences=multiplier, decode_conf=decode_conf,
-                inference_batch_size=inference_batch_size,
-            )
-            padded = [pad_sequence(seq, start, full_len) for seq in backtranslated]
-            all_backtranslated.extend(padded)
+        # Fix 2: adaptive batch size — halve on OOM and retry
+        current_batch_size = inference_batch_size
+        while True:
+            try:
+                # Stage 1: AA -> 3Di
+                fold_translations = _generate_and_save_sequences(
+                    aa_input=[chunk], seq_dir=seq_3di_dir, file_prefix='AA23Di',
+                    tokenizer=tokenizer, model=model, device=device,
+                    num_return_sequences=num_return_sequences, decode_conf=decode_conf,
+                    inference_batch_size=current_batch_size,
+                )
+                # Stage 2: 3Di -> AA
+                backtranslated = _generate_and_save_sequences(
+                    aa_input=fold_translations, seq_dir=seq_if_dir, file_prefix='3Di2AA',
+                    tokenizer=tokenizer, model=model, device=device,
+                    num_return_sequences=multiplier, decode_conf=decode_conf,
+                    inference_batch_size=current_batch_size,
+                )
+                padded = [pad_sequence(seq, start, full_len) for seq in backtranslated]
+                all_backtranslated.extend(padded)
+                break  # success
 
-        except RuntimeError as e:
-            logger.error(f"OOM Error on coverage {coverage}, chunk {start}:{start + chunk_len} — skipping. Error: {e}")
-            torch.cuda.empty_cache()
-            continue
-        finally:
-            torch.cuda.empty_cache()
+            except RuntimeError as e:
+                is_oom = "out of memory" in str(e).lower()
+                if is_oom and current_batch_size > 1:
+                    # Fix 4: only clear cache on actual OOM, never in finally
+                    torch.cuda.empty_cache()
+                    current_batch_size = max(1, current_batch_size // 2)
+                    logger.warning(
+                        f"OOM on coverage {coverage}, chunk {start}:{start + chunk_len} "
+                        f"— retrying with batch_size={current_batch_size}"
+                    )
+                else:
+                    torch.cuda.empty_cache()
+                    logger.error(
+                        f"OOM Error on coverage {coverage}, chunk {start}:{start + chunk_len} "
+                        f"— batch_size={current_batch_size}, skipping. Error: {e}"
+                    )
+                    break  # skip this decode_conf
 
     return all_backtranslated

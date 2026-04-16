@@ -32,7 +32,7 @@ def fold(
     colabfold_env: str = typer.Option(
         "colabfold",
         "--colabfold-env",
-        help="Legacy mamba environment name for ColabFold fallback.",
+        help="Conda environment name for ColabFold fallback via mamba or micromamba.",
     ),
     localcolabfold_dir: Optional[Path] = typer.Option(
         None,

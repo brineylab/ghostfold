@@ -65,10 +65,15 @@ def sequence_entropy(seq: str) -> float:
     """Calculates the Shannon entropy of a protein sequence based on amino acid frequencies."""
     if not seq:
         return 0.0
-    aa_counts = np.array([seq.count(aa) for aa in AA_LETTERS])
+    # Fix 3: vectorized — bincount over byte values then index AA_LETTERS bytes
+    # Matches original behaviour: only AA_LETTERS chars counted; denominator = full length
+    arr = np.frombuffer(seq.encode(), dtype=np.uint8)
+    aa_bytes = np.frombuffer(AA_LETTERS.encode(), dtype=np.uint8)
+    counts = np.bincount(arr, minlength=256)
+    aa_counts = counts[aa_bytes]
     probs = aa_counts / len(seq)
     probs = probs[probs > 0]
-    return -np.sum(probs * np.log2(probs))
+    return float(-np.sum(probs * np.log2(probs)))
 
 
 def is_similar(a: str, b: str, threshold: float = 0.95) -> bool:

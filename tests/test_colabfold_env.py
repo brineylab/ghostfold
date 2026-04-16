@@ -59,7 +59,7 @@ def test_ensure_colabfold_ready_falls_back_to_mamba(monkeypatch, tmp_path):
 
     launcher = ensure_colabfold_ready(colabfold_env="colabfold", localcolabfold_dir=local_dir)
     assert launcher.mode == "mamba"
-    assert launcher.command_prefix == ("mamba", "run", "-n", "colabfold", "--no-capture-output")
+    assert launcher.command_prefix == ("mamba", "run", "-n", "colabfold")
     assert launcher.cwd is None
     assert calls == [
         (["mamba", "env", "list", "--json"], None),
@@ -97,6 +97,45 @@ def test_ensure_colabfold_ready_broken_pixi_uses_mamba(monkeypatch, tmp_path):
     assert launcher.mode == "mamba"
 
 
+def test_ensure_colabfold_ready_falls_back_to_micromamba(monkeypatch, tmp_path):
+    local_dir = tmp_path / "no_localcolabfold"
+    local_dir.mkdir()
+    calls = []
+
+    def fake_which(cmd):
+        if cmd == "pixi":
+            return None
+        if cmd == "mamba":
+            return None
+        if cmd == "micromamba":
+            return "/usr/bin/micromamba"
+        return None
+
+    def fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs.get("cwd")))
+        if cmd == ["micromamba", "env", "list", "--json"]:
+            return subprocess.CompletedProcess(
+                cmd,
+                0,
+                stdout='{"envs": ["/opt/conda/envs/base", "/opt/conda/envs/colabfold"]}',
+            )
+        if cmd == ["micromamba", "run", "-n", "colabfold", "colabfold_batch", "--help"]:
+            return subprocess.CompletedProcess(cmd, 0)
+        raise AssertionError(f"Unexpected command: {cmd}")
+
+    monkeypatch.setattr("ghostfold.core.colabfold_env.shutil.which", fake_which)
+    monkeypatch.setattr("ghostfold.core.colabfold_env.subprocess.run", fake_run)
+
+    launcher = ensure_colabfold_ready(colabfold_env="colabfold", localcolabfold_dir=local_dir)
+    assert launcher.mode == "micromamba"
+    assert launcher.command_prefix == ("micromamba", "run", "-n", "colabfold")
+    assert launcher.cwd is None
+    assert calls == [
+        (["micromamba", "env", "list", "--json"], None),
+        (["micromamba", "run", "-n", "colabfold", "colabfold_batch", "--help"], None),
+    ]
+
+
 def test_ensure_colabfold_ready_total_failure(monkeypatch):
     monkeypatch.setattr("ghostfold.core.colabfold_env.shutil.which", lambda _cmd: None)
 
@@ -107,4 +146,4 @@ def test_ensure_colabfold_ready_total_failure(monkeypatch):
     assert "bash scripts/install_localcolabfold.sh" in msg
     assert "required for `ghostfold run` and `ghostfold fold`" in msg
     assert "Pixi installation instructions" in msg
-    assert "Mamba installation instructions" in msg
+    assert "Mamba/micromamba installation instructions" in msg

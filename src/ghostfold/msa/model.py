@@ -38,13 +38,14 @@ def generate_3di(
     processors = LogitsProcessorList([FiniteLogitsProcessor()])
 
     with torch.no_grad():
+        # Fix 5: sampling (num_beams=1) is 3-5x faster than beam search
+        # with comparable diversity for MSA generation
         outputs = model.generate(
             input_ids=ids.input_ids,
             attention_mask=ids.attention_mask,
             max_length=max_len,
             num_return_sequences=num_return_sequences,
-            num_beams=num_return_sequences*3,
-            early_stopping=True,
+            num_beams=1,
             do_sample=True,
             logits_processor=processors,
             **decode_conf

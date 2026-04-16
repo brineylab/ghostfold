@@ -61,14 +61,14 @@ def _format_setup_error(
     if include_pixi_hint:
         lines.append(f"Pixi installation instructions: {PIXI_INSTALL_URL}")
     if include_mamba_hint:
-        lines.append(f"Mamba installation instructions: {MAMBA_INSTALL_URL}")
+        lines.append(f"Mamba/micromamba installation instructions: {MAMBA_INSTALL_URL}")
     return ColabFoldSetupError("\n".join(lines))
 
 
-def _list_mamba_env_names() -> Set[str]:
+def _list_conda_env_names(runner: str) -> Set[str]:
     try:
         result = subprocess.run(
-            ["mamba", "env", "list", "--json"],
+            [runner, "env", "list", "--json"],
             check=True,
             capture_output=True,
             text=True,
@@ -76,14 +76,14 @@ def _list_mamba_env_names() -> Set[str]:
         )
     except subprocess.CalledProcessError as exc:
         raise ColabFoldSetupError(
-            "Failed to enumerate conda environments via `mamba env list --json`."
+            f"Failed to enumerate conda environments via `{runner} env list --json`."
         ) from exc
 
     try:
         payload = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
         raise ColabFoldSetupError(
-            "Failed to parse `mamba env list --json` output."
+            f"Failed to parse `{runner} env list --json` output."
         ) from exc
 
     env_paths = payload.get("envs", [])
@@ -127,12 +127,18 @@ def _validate_pixi_runtime(
     )
 
 
-def _validate_mamba_runtime(colabfold_env: str) -> tuple[Optional[ColabFoldLauncher], str]:
-    if not shutil.which("mamba"):
-        return None, "mamba is not installed or not available on PATH."
+def _validate_conda_runtime(colabfold_env: str) -> tuple[Optional[ColabFoldLauncher], str]:
+    runner = None
+    for candidate in ("mamba", "micromamba"):
+        if shutil.which(candidate):
+            runner = candidate
+            break
+
+    if runner is None:
+        return None, "mamba/micromamba is not installed or not available on PATH."
 
     try:
-        env_names = _list_mamba_env_names()
+        env_names = _list_conda_env_names(runner)
     except ColabFoldSetupError as exc:
         return None, str(exc)
 
@@ -141,7 +147,7 @@ def _validate_mamba_runtime(colabfold_env: str) -> tuple[Optional[ColabFoldLaunc
 
     try:
         subprocess.run(
-            ["mamba", "run", "-n", colabfold_env, "colabfold_batch", "--help"],
+            [runner, "run", "-n", colabfold_env, "colabfold_batch", "--help"],
             check=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -152,8 +158,8 @@ def _validate_mamba_runtime(colabfold_env: str) -> tuple[Optional[ColabFoldLaunc
 
     return (
         ColabFoldLauncher(
-            mode="mamba",
-            command_prefix=("mamba", "run", "-n", colabfold_env, "--no-capture-output"),
+            mode=runner,
+            command_prefix=(runner, "run", "-n", colabfold_env),
             cwd=None,
         ),
         "",
@@ -171,14 +177,14 @@ def ensure_colabfold_ready(
     if pixi_launcher is not None:
         return pixi_launcher
 
-    mamba_launcher, mamba_reason = _validate_mamba_runtime(colabfold_env)
-    if mamba_launcher is not None:
-        return mamba_launcher
+    conda_launcher, conda_reason = _validate_conda_runtime(colabfold_env)
+    if conda_launcher is not None:
+        return conda_launcher
 
     reason = (
         "Could not find a functional ColabFold runtime.\n"
         f"Pixi check: {pixi_reason}\n"
-        f"Mamba check: {mamba_reason}"
+        f"Mamba/micromamba check: {conda_reason}"
     )
     raise _format_setup_error(
         reason=reason,

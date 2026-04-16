@@ -23,6 +23,7 @@ from ghostfold.core.colabfold_env import (
     DEFAULT_COLABFOLD_ENV,
     ColabFoldSetupError,
     ensure_colabfold_ready,
+    resolve_localcolabfold_dir,
 )
 from ghostfold.core.logging import get_console, get_logger
 from ghostfold.core.postprocess import cleanup_colabfold_outputs
@@ -72,8 +73,10 @@ def _run_colabfold_subprocess(
     max_extra_seq: int,
     launcher_prefix: Sequence[str],
     launcher_cwd: Optional[str],
+    cache_home: Optional[str],
     progress: Optional[Progress] = None,
     task_id: Optional[TaskID] = None,
+    timeout: int = 3600,
 ) -> None:
     """Run a single colabfold_batch subprocess on a specific GPU.
 
@@ -83,6 +86,9 @@ def _run_colabfold_subprocess(
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
     env["PYTHONUNBUFFERED"] = "1"
+    env["MPLBACKEND"] = "Agg"
+    if cache_home is not None:
+        env["XDG_CACHE_HOME"] = cache_home
 
     cmd = [
         *launcher_prefix,
@@ -112,7 +118,15 @@ def _run_colabfold_subprocess(
             if _MODEL_DONE_RE.search(line):
                 progress.update(task_id, advance=1)
 
-    proc.wait()
+    # Fix 10: timeout prevents infinite hangs on bad GPU state or NaN inputs
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        raise RuntimeError(
+            f"ColabFold timed out after {timeout}s for '{msa_file}'. "
+            "Process killed."
+        )
     if proc.returncode != 0:
         raise subprocess.CalledProcessError(proc.returncode, cmd)
 
@@ -132,7 +146,7 @@ def run_colabfold(
         num_gpus: Number of GPUs to distribute jobs across.
         subsample: If True, run multiple subsampling levels.
         mask_fraction: Optional fraction (0.0-1.0) of residues to mask.
-        colabfold_env: Legacy mamba environment used as fallback.
+        colabfold_env: Conda environment used as fallback via mamba/micromamba.
         localcolabfold_dir: Optional path to localcolabfold pixi checkout.
     """
     logger.info("Starting ColabFold Structure Prediction...")
@@ -144,6 +158,11 @@ def run_colabfold(
         )
     except ColabFoldSetupError as exc:
         raise RuntimeError(str(exc)) from exc
+
+    resolved_localcolabfold_dir = resolve_localcolabfold_dir(localcolabfold_dir)
+    cache_home = None
+    if resolved_localcolabfold_dir.exists():
+        cache_home = str(resolved_localcolabfold_dir)
 
     msa_root_dir = os.path.join(project_name, "msa")
     if not os.path.isdir(msa_root_dir):
@@ -238,6 +257,7 @@ def run_colabfold(
                             max_extra_seq,
                             launcher.command_prefix,
                             str(launcher.cwd) if launcher.cwd is not None else None,
+                            cache_home,
                             progress,
                             level_task,
                         )
