@@ -77,17 +77,50 @@ def sequence_entropy(seq: str) -> float:
 
 
 def is_similar(a: str, b: str, threshold: float = 0.95) -> bool:
-    """Checks if two sequences are similar based on a given threshold."""
-    return SequenceMatcher(None, a, b).ratio() > threshold
+    """Checks if two sequences are similar based on Hamming identity threshold.
+
+    Requires equal-length strings (aligned sequences). Falls back to
+    SequenceMatcher for unequal lengths.
+    """
+    if len(a) != len(b):
+        return SequenceMatcher(None, a, b).ratio() > threshold
+    arr_a = np.frombuffer(a.encode(), dtype=np.uint8)
+    arr_b = np.frombuffer(b.encode(), dtype=np.uint8)
+    return float((arr_a == arr_b).mean()) > threshold
 
 
 def deduplicate(sequences: List[str], threshold: float = 0.95) -> List[str]:
-    """Removes duplicate sequences from a list based on a similarity threshold."""
-    unique: List[str] = []
-    for s in sequences:
-        if not any(is_similar(s, u, threshold) for u in unique):
-            unique.append(s)
-    return unique
+    """Removes near-duplicate sequences using vectorized Hamming identity.
+
+    All sequences must be the same length (standard for aligned MSAs).
+    Falls back to sequential comparison for unequal-length inputs.
+    """
+    if not sequences:
+        return []
+    if len(set(len(s) for s in sequences)) > 1:
+        # Unequal lengths: fall back to original O(n²) logic
+        unique: List[str] = []
+        for s in sequences:
+            if not any(is_similar(s, u, threshold) for u in unique):
+                unique.append(s)
+        return unique
+
+    L = len(sequences[0])
+    arr = np.frombuffer(
+        b"".join(s.encode() for s in sequences), dtype=np.uint8
+    ).reshape(-1, L)  # (N, L)
+
+    unique_indices: List[int] = [0]
+    unique_arr = arr[[0]]  # (1, L)
+
+    for i in range(1, len(arr)):
+        row = arr[i:i+1]  # (1, L)
+        identity = (row == unique_arr).mean(axis=1)  # (num_unique,)
+        if not np.any(identity > threshold):
+            unique_indices.append(i)
+            unique_arr = arr[unique_indices]
+
+    return [sequences[i] for i in unique_indices]
 
 
 def filter_sequences(
@@ -125,6 +158,13 @@ def filter_sequences(
     processed_sequences = [s for s in processed_sequences if sequence_entropy(s) > entropy_threshold]
     current_time = time.time()
     timing_data['Entropy Filter'] = {'count': len(processed_sequences), 'time': current_time - last_time}
+    last_time = current_time
+
+    # Step 4: Deduplicate (remove near-identical sequences)
+    if len(processed_sequences) > 1:
+        processed_sequences = deduplicate(processed_sequences, similarity_threshold)
+    current_time = time.time()
+    timing_data['Deduplicate'] = {'count': len(processed_sequences), 'time': current_time - last_time}
     last_time = current_time
 
     # --- Reporting ---

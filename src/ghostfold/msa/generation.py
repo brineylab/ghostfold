@@ -119,3 +119,109 @@ def generate_sequences_for_coverage(
                     break  # skip this decode_conf
 
     return all_backtranslated
+
+
+def generate_sequences_for_coverages_batched(
+    query_seq: str,
+    full_len: int,
+    decoding_configs,
+    num_return_sequences: int,
+    multiplier: int,
+    coverage_list,
+    model,
+    tokenizer,
+    device,
+    project_dir: str,
+    inference_batch_size: int,
+) -> list:
+    """Generates padded sequences for all coverage levels using batched inference.
+
+    Instead of processing each coverage level sequentially (which calls the model
+    once per coverage per decode_conf), this function:
+      1. Samples one random chunk per coverage level.
+      2. For each decode_conf, batches ALL coverage chunks into a single
+         generate_3di call, then a single generate_aa call.
+      3. Pads each result back to full_len.
+
+    This maximises GPU utilisation through larger effective batch sizes.
+    """
+    seq_3di_dir = os.path.join(project_dir, 'seqs', 'AA23Di')
+    seq_if_dir = os.path.join(project_dir, 'seqs', '3Di2AA')
+    os.makedirs(seq_3di_dir, exist_ok=True)
+    os.makedirs(seq_if_dir, exist_ok=True)
+
+    # Sample one chunk per coverage (done once, shared across decode_confs)
+    chunks_and_starts = []
+    for coverage in coverage_list:
+        chunk_len = int(coverage * full_len)
+        if chunk_len > full_len or chunk_len == 0:
+            logger.warning(
+                f"Chunk length ({chunk_len}) invalid for full_len={full_len}. Skipping coverage {coverage}."
+            )
+            continue
+        start = random.randint(0, full_len - chunk_len)
+        chunk = query_seq[start: start + chunk_len]
+        chunks_and_starts.append((chunk, start, coverage))
+
+    if not chunks_and_starts:
+        return []
+
+    all_backtranslated = []
+    current_batch_size = inference_batch_size
+
+    for decode_conf in decoding_configs:
+        while True:
+            try:
+                all_chunks = [c for c, _, _ in chunks_and_starts]
+                fold_translations = _generate_and_save_sequences(
+                    aa_input=all_chunks,
+                    seq_dir=seq_3di_dir,
+                    file_prefix='AA23Di',
+                    tokenizer=tokenizer,
+                    model=model,
+                    device=device,
+                    num_return_sequences=num_return_sequences,
+                    decode_conf=decode_conf,
+                    inference_batch_size=current_batch_size,
+                )
+
+                backtranslated = _generate_and_save_sequences(
+                    aa_input=fold_translations,
+                    seq_dir=seq_if_dir,
+                    file_prefix='3Di2AA',
+                    tokenizer=tokenizer,
+                    model=model,
+                    device=device,
+                    num_return_sequences=multiplier,
+                    decode_conf=decode_conf,
+                    inference_batch_size=current_batch_size,
+                )
+
+                seqs_per_chunk = num_return_sequences * multiplier
+                for idx, (_, start, _) in enumerate(chunks_and_starts):
+                    chunk_seqs = backtranslated[idx * seqs_per_chunk: (idx + 1) * seqs_per_chunk]
+                    all_backtranslated.extend(
+                        pad_sequence(seq, start, full_len) for seq in chunk_seqs
+                    )
+                break
+
+            except RuntimeError as e:
+                is_oom = "out of memory" in str(e).lower()
+                if is_oom and current_batch_size > 1:
+                    try:
+                        torch.cuda.empty_cache()
+                    except Exception:
+                        pass
+                    current_batch_size = max(1, current_batch_size // 2)
+                    logger.warning(
+                        f"OOM — retrying with batch_size={current_batch_size}"
+                    )
+                else:
+                    try:
+                        torch.cuda.empty_cache()
+                    except Exception:
+                        pass
+                    logger.error(f"OOM Error, batch_size={current_batch_size}, skipping. Error: {e}")
+                    break
+
+    return all_backtranslated
