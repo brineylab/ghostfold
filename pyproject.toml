@@ -37,6 +37,7 @@ dev = [
     "pytest-cov",
     "ruff",
 ]
+quant = ["bitsandbytes>=0.41.0"]
 
 [project.scripts]
 ghostfold = "ghostfold.cli.app:app"
