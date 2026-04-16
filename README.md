@@ -107,6 +107,9 @@ Options:
 - `--subsample` — Enable MSA subsampling (multiple depth levels)
 - `--mask-fraction FLOAT` — Mask a fraction of MSA residues (0.0-1.0)
 - `--num-gpus INT` — Override auto-detected GPU count
+- `--num-models INT` — Number of AlphaFold2 models to run (default: 5)
+- `--num-seeds INT` — Seeds per model (default: 5); total predictions = models × seeds
+- `--num-recycles INT` — Recycling iterations per prediction (default: 10)
 - `--localcolabfold-dir PATH` — Path to localcolabfold pixi checkout (default: `./localcolabfold`)
 - `--colabfold-env TEXT` — Legacy mamba env name for ColabFold fallback (default: `colabfold`)
 
@@ -136,7 +139,7 @@ ghostfold --version
 GhostFold can also be used as a Python library:
 
 ```python
-from ghostfold import run_pipeline
+from ghostfold import run_pipeline, calculate_neff, run_neff_calculation_in_parallel
 from ghostfold.core.config import load_config
 
 # Load config with optional overrides
