@@ -2,14 +2,19 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Project Structure
+
+GhostFold is a `src`-layout Python package. Core library code lives in `src/ghostfold/`, split by concern: `cli/` for Typer entrypoints, `core/` for pipeline and ColabFold integration, `msa/` for pseudoMSA generation and filtering, `io/` for FASTA handling, `viz/` for plots, and `mutator/` for mutation logic. Tests live in `tests/` and generally mirror module names (e.g. `tests/test_cli.py`, `tests/test_filters.py`). Runtime defaults are in `src/ghostfold/data/default_config.yaml`; helper scripts such as `scripts/install_localcolabfold.sh` support local setup.
+
 ## Commands
 
 ```bash
-pip install -e ".[dev]"          # editable install with pytest + ruff
+pip install -e ".[dev]"          # editable install with pytest + ruff (Python 3.10+)
 pytest                            # full test suite
 pytest tests/test_cli.py -q      # focused test file
 ruff check src tests              # lint
 ghostfold --help                  # inspect CLI
+python -m ghostfold.cli.app --help  # alternative CLI inspection
 python -m build                   # build distributions
 ```
 
