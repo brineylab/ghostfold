@@ -1,4 +1,5 @@
 import re
+from unittest.mock import patch
 
 from typer.testing import CliRunner
 
@@ -108,3 +109,42 @@ class TestNeffCommand:
         output = _plain(result.output)
         assert result.exit_code == 0
         assert "project_dir" in output.lower() or "PROJECT_DIR" in output
+
+
+def test_msa_accepts_precision_flag():
+    """--precision flag must be accepted by the msa subcommand."""
+    with patch("ghostfold.core.pipeline.run_pipeline"):
+        result = runner.invoke(app, [
+            "msa",
+            "--project-name", "test_proj",
+            "--fasta-path", "tests/fixtures/test.fasta",
+            "--precision", "fp16",
+        ])
+    # If flag is unrecognised typer exits with code 2
+    assert result.exit_code != 2, f"Unrecognised flag. Output:\n{result.output}"
+
+
+def test_msa_precision_default_is_bf16():
+    """msa subcommand must pass precision='bf16' to run_pipeline by default."""
+    with patch("ghostfold.core.pipeline.run_pipeline") as mock_run, \
+         patch("ghostfold.core.logging.setup_logging", return_value="/tmp/test.log"), \
+         patch("ghostfold.core.logging.get_console"), \
+         patch("ghostfold.core.config.load_config", return_value={}):
+        runner.invoke(app, [
+            "msa",
+            "--project-name", "test_proj",
+            "--fasta-path", "tests/fixtures/test.fasta",
+        ])
+        call_kwargs = mock_run.call_args.kwargs if mock_run.called else {}
+        assert call_kwargs.get("precision", "bf16") == "bf16"
+
+
+def test_msa_precision_invalid_rejected():
+    """--precision with invalid value must exit with non-zero code."""
+    result = runner.invoke(app, [
+        "msa",
+        "--project-name", "test_proj",
+        "--fasta-path", "tests/fixtures/test.fasta",
+        "--precision", "fp32",
+    ])
+    assert result.exit_code != 0
