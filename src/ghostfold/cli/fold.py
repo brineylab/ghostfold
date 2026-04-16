@@ -39,6 +39,9 @@ def fold(
         "--localcolabfold-dir",
         help="Path to localcolabfold pixi checkout (default: ./localcolabfold).",
     ),
+    num_models: int = typer.Option(5, "--num-models", help="Number of AlphaFold2 models to run (default 5)."),
+    num_seeds: int = typer.Option(5, "--num-seeds", help="Number of seeds per model (default 5). Models × Seeds = total predictions."),
+    num_recycles: int = typer.Option(10, "--num-recycles", help="Number of recycling iterations (default 10)."),
 ) -> None:
     """Run ColabFold on existing MSAs for structure prediction."""
     from ghostfold.core.logging import setup_logging, get_console
@@ -59,6 +62,12 @@ def fold(
         typer.secho(f"Warning: {exc}", fg=typer.colors.YELLOW, err=True)
         raise typer.Exit(code=1)
 
+    extra_colabfold_params = {
+        "--num-models": str(num_models),
+        "--num-seeds": str(num_seeds),
+        "--num-recycle": str(num_recycles),
+    }
+
     run_colabfold(
         project_name=project_name,
         num_gpus=gpus,
@@ -66,4 +75,5 @@ def fold(
         mask_fraction=mask_fraction,
         colabfold_env=colabfold_env,
         localcolabfold_dir=localcolabfold_dir,
+        extra_colabfold_params=extra_colabfold_params,
     )
