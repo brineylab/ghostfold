@@ -1,4 +1,5 @@
 import os
+import importlib.util
 import itertools
 import json
 from contextlib import nullcontext
@@ -36,41 +37,93 @@ DEFAULT_COVERAGE_VALUES: List[float] = [1.0]
 DEFAULT_MUTATION_RATES_STR: str = '{"MEGABLAST": 5, "PAM250": 20, "BLOSUM62": 10}'
 MODEL_NAME: str = "Rostlab/ProstT5"
 
-# Module-level model cache: key is "{model_name}:{device_type}"
+# Module-level model cache: key is "{model_name}:{device_type}:{precision}"
 _MODEL_CACHE: Dict[str, Tuple[Any, Any]] = {}
 
 
-def _load_model(device: Any, model_name: str = MODEL_NAME) -> Tuple[Any, Any]:
-    """Return (tokenizer, model) for the given device, loading only on first call.
+def _load_model(
+    device: Any,
+    model_name: str = MODEL_NAME,
+    precision: str = "bf16",
+) -> Tuple[Any, Any]:
+    """Return (tokenizer, model) for the given device and precision, loading only on first call.
 
-    Uses bfloat16 on Ampere+ CUDA (wider dynamic range, no NaN issues) and
-    falls back to float16 on older GPUs. Applies torch.compile in
-    reduce-overhead mode for repeated inference speedup.
+    Precision options:
+      bf16  — bfloat16 (default, Ampere+)
+      fp16  — float16
+      int8  — bitsandbytes 8-bit quantization (requires pip install -e '.[quant]')
+      int4  — bitsandbytes NF4 4-bit quantization (requires pip install -e '.[quant]')
+
+    Attention backend: Flash Attention 2 if available, else SDPA (PyTorch built-in).
+    torch.compile: max-autotune for bf16/fp16 only (skipped for quantized models).
     """
     import torch
 
-    key = f"{model_name}:{device.type}"
-    if key not in _MODEL_CACHE:
-        logger.info(f"Loading T5 model and tokenizer from '{model_name}' on {device.type.upper()}...")
-        tokenizer = T5Tokenizer.from_pretrained(model_name, do_lower_case=False, legacy=True)
-        model = AutoModelForSeq2SeqLM.from_pretrained(model_name).to(device)
-        model.eval()
-        if device.type == "cuda":
-            if torch.cuda.is_bf16_supported():
-                model.to(torch.bfloat16)
-                logger.info("Using bfloat16 precision (Ampere+).")
-            else:
-                model.half()
-                logger.info("Using float16 precision (pre-Ampere fallback).")
-            try:
-                import torch._dynamo
-                torch._dynamo.config.suppress_errors = True
-                model = torch.compile(model, mode="reduce-overhead")
-                logger.info("Model compiled with torch.compile (reduce-overhead).")
-            except Exception as e:
-                logger.warning(f"torch.compile unavailable, using eager mode: {e}")
-        logger.info("Model and tokenizer loaded successfully.")
-        _MODEL_CACHE[key] = (tokenizer, model)
+    _VALID_PRECISIONS = ("bf16", "fp16", "int8", "int4")
+    if precision not in _VALID_PRECISIONS:
+        raise ValueError(
+            f"Invalid precision '{precision}'. Must be one of: {_VALID_PRECISIONS}"
+        )
+
+    key = f"{model_name}:{device.type}:{precision}"
+    if key in _MODEL_CACHE:
+        return _MODEL_CACHE[key]
+
+    logger.info(f"Loading T5 model '{model_name}' on {device.type.upper()} with precision={precision}...")
+
+    # Resolve attention backend
+    if importlib.util.find_spec("flash_attn") is not None:
+        attn_impl = "flash_attention_2"
+        logger.info("Flash Attention 2 detected — using flash_attention_2 backend.")
+    else:
+        attn_impl = "sdpa"
+        logger.info("flash-attn not found — falling back to SDPA backend.")
+
+    if precision in ("int8", "int4") and importlib.util.find_spec("bitsandbytes") is None:
+        raise ImportError(
+            f"precision='{precision}' requires bitsandbytes. "
+            "Install with: pip install -e '.[quant]'"
+        )
+
+    tokenizer = T5Tokenizer.from_pretrained(model_name, do_lower_case=False, legacy=True)
+
+    if precision in ("int8", "int4"):
+        from transformers import BitsAndBytesConfig
+        if precision == "int8":
+            bnb_config = BitsAndBytesConfig(load_in_8bit=True)
+        else:  # int4
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.bfloat16,
+            )
+        model = AutoModelForSeq2SeqLM.from_pretrained(
+            model_name,
+            quantization_config=bnb_config,
+            attn_implementation=attn_impl,
+            device_map="auto",
+        )
+        logger.info(f"Model loaded with {precision} quantization (bitsandbytes).")
+        logger.debug("torch.compile skipped for quantized models (bitsandbytes incompatibility).")
+    else:
+        torch_dtype = torch.bfloat16 if precision == "bf16" else torch.float16
+        model = AutoModelForSeq2SeqLM.from_pretrained(
+            model_name,
+            torch_dtype=torch_dtype,
+            attn_implementation=attn_impl,
+        ).to(device)
+        logger.info(f"Model loaded with {precision} precision.")
+        try:
+            import torch._dynamo
+            torch._dynamo.config.suppress_errors = True
+            model = torch.compile(model, mode="max-autotune")
+            logger.info("Model compiled with torch.compile (max-autotune).")
+        except Exception as e:
+            logger.warning(f"torch.compile unavailable, using eager mode: {e}")
+
+    model.eval()
+    logger.info("Model and tokenizer loaded successfully.")
+    _MODEL_CACHE[key] = (tokenizer, model)
     return _MODEL_CACHE[key]
 
 
@@ -287,6 +340,7 @@ def run_pipeline(
     num_runs: int = 1,
     recursive: bool = False,
     show_progress: bool = True,
+    precision: str = "bf16",
 ) -> None:
     """Runs the pseudoMSA generation pipeline with OOM handling for model loading."""
     import warnings
@@ -298,7 +352,7 @@ def run_pipeline(
     torch.cuda.empty_cache()
 
     try:
-        tokenizer, model = _load_model(device)
+        tokenizer, model = _load_model(device, precision=precision)
     except RuntimeError as e:
         if "out of memory" in str(e).lower():
             logger.error("CUDA out of memory while loading the model!")
