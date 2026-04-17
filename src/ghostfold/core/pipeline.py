@@ -23,7 +23,7 @@ from ghostfold.mutator import MSA_Mutator
 from ghostfold.io.fasta import write_fasta, create_project_dir, concatenate_fasta_files, read_fasta_from_path
 from ghostfold.msa.filters import filter_sequences
 from ghostfold.viz.plotting import generate_optional_plots
-from ghostfold.msa.generation import generate_sequences_for_coverages_batched
+from ghostfold.msa.generation import generate_sequences_for_coverages_batched, generate_multimer_sequences
 
 logger = get_logger("pipeline")
 
@@ -273,6 +273,149 @@ def generate_decoding_configs(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     return config_list
 
 
+def write_multimer_pst_msa(
+    output_path: str,
+    query_seq: str,
+    concat_seqs: List[str],
+    per_chain_seqs: List[List[str]],
+    chain_lengths: List[int],
+) -> None:
+    """Write a multimer pseudoMSA file in ColabFold A3M/FASTA format.
+
+    Layout:
+      1. Query record — sequence contains ':' chain separators (ColabFold convention)
+      2. Concat block — full-length sequences generated from the joined complex
+      3. Per-chain blocks — per-chain sequences gap-padded to full complex length
+
+    All MSA rows are written without ':'; only the query line carries it.
+    """
+    with open(output_path, "w") as fh:
+        fh.write(f">query\n{query_seq}\n")
+        for i, seq in enumerate(concat_seqs):
+            fh.write(f">concat_{i}\n{seq}\n")
+        for chain_idx, chain_seqs in enumerate(per_chain_seqs):
+            prefix = "-" * sum(chain_lengths[:chain_idx])
+            suffix = "-" * sum(chain_lengths[chain_idx + 1:])
+            for seq_idx, seq in enumerate(chain_seqs):
+                fh.write(f">chain{chain_idx}_{seq_idx}\n{prefix}{seq}{suffix}\n")
+
+
+def process_multimer_run(
+    chains: List[str],
+    header: str,
+    run_idx: int,
+    base_project_dir: str,
+    decoding_configs: List[Dict[str, Any]],
+    num_return_sequences: int,
+    multiplier: int,
+    coverage_list: List[float],
+    model: Any,
+    tokenizer: Any,
+    device: Any,
+    evolve_msa: bool,
+    mutation_rates_str: str,
+    sample_percentage: float,
+    inference_batch_size: int,
+    progress: Optional[Progress] = None,
+) -> Dict[str, Any]:
+    """Run one MSA-generation pass for a multimer complex.
+
+    Returns a dict with keys:
+      - "concat_seqs": filtered concat-block sequences (or None on error)
+      - "per_chain_seqs": list of filtered per-chain sequence lists (or None)
+      - "per_chain_evolved_seqs": list of evolved per-chain lists (or None)
+    """
+    import torch
+
+    run_dir = os.path.join(base_project_dir, f"run_{run_idx}")
+    os.makedirs(run_dir, exist_ok=True)
+    logger.info(f"Starting multimer run {run_idx} for '{header}'")
+
+    coverage_task = None
+    if progress is not None:
+        coverage_task = progress.add_task(
+            f"  {header} run {run_idx} (multimer)", total=1
+        )
+
+    concat_query = "".join(chains)
+    chain_lengths = [len(c) for c in chains]
+
+    try:
+        concat_generated, per_chain_generated = generate_multimer_sequences(
+            chains=chains,
+            coverage_list=coverage_list,
+            decoding_configs=decoding_configs,
+            num_return_sequences=num_return_sequences,
+            multiplier=multiplier,
+            model=model,
+            tokenizer=tokenizer,
+            device=device,
+            project_dir=run_dir,
+            inference_batch_size=inference_batch_size,
+        )
+    except RuntimeError as e:
+        if "out of memory" in str(e).lower():
+            logger.error(f"CUDA OOM during multimer generation for run {run_idx}!")
+            try:
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
+        else:
+            logger.error(f"Runtime error during multimer generation for run {run_idx}: {e}")
+        if progress is not None and coverage_task is not None:
+            progress.remove_task(coverage_task)
+        return {"concat_seqs": None, "per_chain_seqs": None, "per_chain_evolved_seqs": None}
+
+    if progress is not None and coverage_task is not None:
+        progress.update(coverage_task, advance=1)
+        progress.remove_task(coverage_task)
+
+    # Filter concat block at full complex length (include query as first entry)
+    concat_filtered = filter_sequences([concat_query] + concat_generated, len(concat_query))
+
+    # Filter each chain block at its own length (include chain query as first entry)
+    per_chain_filtered: List[List[str]] = [
+        filter_sequences([chain] + chain_seqs, chain_lengths[i])
+        for i, (chain, chain_seqs) in enumerate(zip(chains, per_chain_generated))
+    ]
+
+    # Optional per-chain MSA evolution
+    per_chain_evolved: Optional[List[List[str]]] = None
+    if evolve_msa:
+        per_chain_evolved = []
+        for chain_idx, chain_filtered in enumerate(per_chain_filtered):
+            if not chain_filtered:
+                per_chain_evolved.append([])
+                continue
+            chain_fasta_path = os.path.join(run_dir, f"filtered_chain_{chain_idx}.fasta")
+            write_fasta(
+                chain_fasta_path,
+                [SeqRecord(Seq(s), id=f"filtered_{i}", description="")
+                 for i, s in enumerate(chain_filtered)],
+            )
+            try:
+                mutation_rates = json.loads(mutation_rates_str)
+                mutator = MSA_Mutator(mutation_rates=mutation_rates)
+                evolved_path = os.path.join(run_dir, f"evolved_chain_{chain_idx}.fasta")
+                mutator.evolve_msa(chain_fasta_path, evolved_path, sample_percentage=sample_percentage)
+                if os.path.exists(evolved_path) and os.path.getsize(evolved_path) > 0:
+                    per_chain_evolved.append(
+                        [str(r.seq) for r in SeqIO.parse(evolved_path, "fasta")]
+                    )
+                else:
+                    per_chain_evolved.append([])
+            except Exception as e:
+                logger.error(f"MSA evolution error for chain {chain_idx}: {e}")
+                per_chain_evolved.append([])
+
+    logger.info(f"Finished multimer run {run_idx} for '{header}'")
+    return {
+        "concat_seqs": concat_filtered,
+        "per_chain_seqs": per_chain_filtered,
+        "per_chain_evolved_seqs": per_chain_evolved,
+    }
+
+
 def run_pipeline(
     project: str,
     fasta_path: str,
@@ -359,40 +502,97 @@ def run_pipeline(
                 )
 
             base_project_dir = create_project_dir(project, header)
-            all_run_filtered_paths, all_run_evolved_paths = [], []
-
-            for run_idx in range(1, num_runs + 1):
-                run_results = process_sequence_run(
-                    query_seq=query_seq,
-                    header=header,
-                    full_len=len(query_seq),
-                    run_idx=run_idx,
-                    base_project_dir=base_project_dir,
-                    decoding_configs=decoding_configs,
-                    num_return_sequences=num_return_sequences,
-                    multiplier=multiplier,
-                    coverage_list=coverage_list,
-                    model=model,
-                    tokenizer=tokenizer,
-                    device=device,
-                    evolve_msa=evolve_msa,
-                    mutation_rates_str=mutation_rates_str,
-                    sample_percentage=sample_percentage,
-                    hex_colors=hex_colors,
-                    plot_msa=plot_msa,
-                    plot_coevolution=plot_coevolution,
-                    inference_batch_size=inference_batch_size,
-                    progress=progress,
-                )
-                if run_results["filtered"]:
-                    all_run_filtered_paths.append(run_results["filtered"])
-                if run_results["evolved"]:
-                    all_run_evolved_paths.append(run_results["evolved"])
-
-            logger.info(f"Concatenating all FASTA files for '{header}'")
             pst_msa_path = os.path.join(base_project_dir, "pstMSA.fasta")
-            files_to_concat = all_run_filtered_paths + all_run_evolved_paths
-            concatenate_fasta_files(files_to_concat, pst_msa_path)
+
+            if ":" in query_seq:
+                # --- Multimer path ---
+                chains = query_seq.split(":")
+                chain_lengths = [len(c) for c in chains]
+
+                all_concat_seqs: List[str] = []
+                all_per_chain_seqs: List[List[str]] = [[] for _ in chains]
+
+                for run_idx in range(1, num_runs + 1):
+                    run_results = process_multimer_run(
+                        chains=chains,
+                        header=header,
+                        run_idx=run_idx,
+                        base_project_dir=base_project_dir,
+                        decoding_configs=decoding_configs,
+                        num_return_sequences=num_return_sequences,
+                        multiplier=multiplier,
+                        coverage_list=coverage_list,
+                        model=model,
+                        tokenizer=tokenizer,
+                        device=device,
+                        evolve_msa=evolve_msa,
+                        mutation_rates_str=mutation_rates_str,
+                        sample_percentage=sample_percentage,
+                        inference_batch_size=inference_batch_size,
+                        progress=progress,
+                    )
+                    if run_results["concat_seqs"]:
+                        all_concat_seqs.extend(run_results["concat_seqs"])
+                    per_chain = run_results["per_chain_seqs"] or [[] for _ in chains]
+                    for i, seqs in enumerate(per_chain):
+                        all_per_chain_seqs[i].extend(seqs)
+                    if run_results["per_chain_evolved_seqs"]:
+                        for i, evolved in enumerate(run_results["per_chain_evolved_seqs"]):
+                            all_per_chain_seqs[i].extend(evolved)
+
+                write_multimer_pst_msa(
+                    output_path=pst_msa_path,
+                    query_seq=query_seq,
+                    concat_seqs=all_concat_seqs,
+                    per_chain_seqs=all_per_chain_seqs,
+                    chain_lengths=chain_lengths,
+                )
+                logger.info(
+                    f"Multimer pseudoMSA written to {pst_msa_path} "
+                    f"({len(all_concat_seqs)} concat rows, "
+                    + ", ".join(
+                        f"{len(s)} chain-{i} rows"
+                        for i, s in enumerate(all_per_chain_seqs)
+                    )
+                    + ")"
+                )
+
+            else:
+                # --- Monomer path ---
+                all_run_filtered_paths, all_run_evolved_paths = [], []
+
+                for run_idx in range(1, num_runs + 1):
+                    run_results = process_sequence_run(
+                        query_seq=query_seq,
+                        header=header,
+                        full_len=len(query_seq),
+                        run_idx=run_idx,
+                        base_project_dir=base_project_dir,
+                        decoding_configs=decoding_configs,
+                        num_return_sequences=num_return_sequences,
+                        multiplier=multiplier,
+                        coverage_list=coverage_list,
+                        model=model,
+                        tokenizer=tokenizer,
+                        device=device,
+                        evolve_msa=evolve_msa,
+                        mutation_rates_str=mutation_rates_str,
+                        sample_percentage=sample_percentage,
+                        hex_colors=hex_colors,
+                        plot_msa=plot_msa,
+                        plot_coevolution=plot_coevolution,
+                        inference_batch_size=inference_batch_size,
+                        progress=progress,
+                    )
+                    if run_results["filtered"]:
+                        all_run_filtered_paths.append(run_results["filtered"])
+                    if run_results["evolved"]:
+                        all_run_evolved_paths.append(run_results["evolved"])
+
+                logger.info(f"Concatenating all FASTA files for '{header}'")
+                files_to_concat = all_run_filtered_paths + all_run_evolved_paths
+                concatenate_fasta_files(files_to_concat, pst_msa_path)
+
             if progress is not None:
                 progress.update(overall_task, advance=1)
 

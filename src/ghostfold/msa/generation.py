@@ -1,7 +1,7 @@
 import os
 import random
 import torch
-from typing import List, Dict, Any
+from typing import Any, Dict, List, Tuple
 from transformers import T5Tokenizer, AutoModelForSeq2SeqLM
 
 from ghostfold.core.logging import get_logger
@@ -225,3 +225,79 @@ def generate_sequences_for_coverages_batched(
                     break
 
     return all_backtranslated
+
+
+def generate_multimer_sequences(
+    chains: List[str],
+    coverage_list: List[float],
+    decoding_configs: List[Dict[str, Any]],
+    num_return_sequences: int,
+    multiplier: int,
+    model: Any,
+    tokenizer: Any,
+    device: Any,
+    project_dir: str,
+    inference_batch_size: int,
+) -> Tuple[List[str], List[List[str]]]:
+    """Generate pseudoMSA sequences for a multimer complex.
+
+    Runs ProstT5 on the full concatenated sequence (chains joined, no separator)
+    and independently on each individual chain.
+
+    Args:
+        chains: Per-chain sequences (split on ':').
+        coverage_list: Coverage fractions for chunk sampling.
+        decoding_configs: Decoding parameter combinations.
+        num_return_sequences: Sequences per generation step.
+        multiplier: Backtranslation multiplier.
+        model: ProstT5 model.
+        tokenizer: ProstT5 tokenizer.
+        device: Torch device.
+        project_dir: Directory for intermediate FASTA files.
+        inference_batch_size: Batch size (halved on OOM).
+
+    Returns:
+        Tuple of:
+          - concat_seqs: sequences for the full concatenated complex
+            (length = sum of chain lengths, no separator)
+          - per_chain_seqs: per_chain_seqs[i] is a list of sequences
+            for chain i (length = len(chains[i]))
+    """
+    concat_seq = "".join(chains)
+
+    concat_dir = os.path.join(project_dir, "concat")
+    os.makedirs(concat_dir, exist_ok=True)
+    concat_seqs = generate_sequences_for_coverages_batched(
+        query_seq=concat_seq,
+        full_len=len(concat_seq),
+        decoding_configs=decoding_configs,
+        num_return_sequences=num_return_sequences,
+        multiplier=multiplier,
+        coverage_list=coverage_list,
+        model=model,
+        tokenizer=tokenizer,
+        device=device,
+        project_dir=concat_dir,
+        inference_batch_size=inference_batch_size,
+    )
+
+    per_chain_seqs: List[List[str]] = []
+    for chain_idx, chain in enumerate(chains):
+        chain_dir = os.path.join(project_dir, f"chain_{chain_idx}")
+        os.makedirs(chain_dir, exist_ok=True)
+        chain_seqs = generate_sequences_for_coverages_batched(
+            query_seq=chain,
+            full_len=len(chain),
+            decoding_configs=decoding_configs,
+            num_return_sequences=num_return_sequences,
+            multiplier=multiplier,
+            coverage_list=coverage_list,
+            model=model,
+            tokenizer=tokenizer,
+            device=device,
+            project_dir=chain_dir,
+            inference_batch_size=inference_batch_size,
+        )
+        per_chain_seqs.append(chain_seqs)
+
+    return concat_seqs, per_chain_seqs
