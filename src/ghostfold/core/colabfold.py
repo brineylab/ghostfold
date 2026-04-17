@@ -53,6 +53,24 @@ DEFAULT_MAX_SEQ = [32]
 DEFAULT_MAX_EXTRA_SEQ = [64]
 
 
+def _detect_multimer_from_a3m(a3m_file: str) -> bool:
+    """Return True if the first sequence in an A3M file contains ':' (multimer query)."""
+    try:
+        with open(a3m_file) as fh:
+            in_first_record = False
+            for line in fh:
+                line = line.rstrip()
+                if line.startswith(">"):
+                    if in_first_record:
+                        break
+                    in_first_record = True
+                elif in_first_record and line:
+                    return ":" in line
+    except OSError:
+        pass
+    return False
+
+
 def _get_colabfold_total_models(params: list) -> int:
     """Extract --num-models * --num-seeds from the ColabFold param list."""
     num_models = 5
@@ -180,6 +198,7 @@ def run_colabfold(
     colabfold_env: str = DEFAULT_COLABFOLD_ENV,
     localcolabfold_dir: Path | str | None = None,
     extra_colabfold_params: Optional[dict] = None,
+    multimer_model_version: str = "v3",
 ) -> None:
     """Run ColabFold structure prediction on generated MSAs.
 
@@ -190,6 +209,8 @@ def run_colabfold(
         mask_fraction: Optional fraction (0.0-1.0) of residues to mask.
         colabfold_env: Conda environment used as fallback via mamba/micromamba.
         localcolabfold_dir: Optional path to localcolabfold pixi checkout.
+        multimer_model_version: AlphaFold2-Multimer version (v1/v2/v3) used when
+            a multimer is auto-detected from the A3M query sequence.
     """
     logger.info("Starting ColabFold Structure Prediction...")
 
@@ -298,6 +319,16 @@ def run_colabfold(
                         os.makedirs(current_pred_dir, exist_ok=True)
                         gpu_id = j % num_gpus
 
+                        file_extra_params = dict(extra_colabfold_params or {})
+                        if _detect_multimer_from_a3m(msa_file):
+                            file_extra_params["--model-type"] = (
+                                f"alphafold2_multimer_{multimer_model_version}"
+                            )
+                            logger.info(
+                                f"   [Multimer detected] {output_folder_name} -> "
+                                f"model-type alphafold2_multimer_{multimer_model_version}"
+                            )
+
                         logger.info(
                             f"   [Dispatching Colabfold] Input: {output_folder_name} -> GPU: {gpu_id}"
                         )
@@ -313,7 +344,7 @@ def run_colabfold(
                             cache_home,
                             progress,
                             level_task,
-                            extra_colabfold_params,
+                            file_extra_params,
                         )
                         futures.append(future)
 
