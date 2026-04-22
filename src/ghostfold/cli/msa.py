@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import List, Optional
 
@@ -26,8 +25,18 @@ def msa(
         help="JSON string for mutation rates.",
     ),
     sample_percentage: float = typer.Option(1.0, "--sample-percentage", help="Percentage of sequences to sample for evolution."),
+    precision: str = typer.Option(
+        "bf16",
+        "--precision",
+        help="Model precision: bf16, fp16, int8, int4. int8/int4 require pip install -e '.[quant]'.",
+    ),
 ) -> None:
     """Generate pseudoMSAs from single sequences using ProstT5."""
+    _VALID_PRECISIONS = ["bf16", "fp16", "int8", "int4"]
+    if precision not in _VALID_PRECISIONS:
+        typer.echo(f"Error: --precision must be one of {_VALID_PRECISIONS}. Got: '{precision}'", err=True)
+        raise typer.Exit(code=1)
+
     from ghostfold.core.logging import setup_logging, get_console
     from ghostfold.core.config import load_config
     from ghostfold.core.pipeline import run_pipeline
@@ -50,4 +59,5 @@ def msa(
         plot_coevolution=not no_coevolution_maps,
         num_runs=num_runs,
         recursive=recursive,
+        precision=precision,
     )

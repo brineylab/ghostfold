@@ -77,6 +77,7 @@ def _msa_worker(
     config_path: Optional[str],
     log_file_path: str,
     recursive: bool = False,
+    precision: str = "bf16",
 ) -> None:
     """Worker function that runs the MSA pipeline on a specific GPU.
 
@@ -110,6 +111,7 @@ def _msa_worker(
         num_runs=1,
         recursive=recursive,
         show_progress=False,
+        precision=precision,
     )
 
 
@@ -120,6 +122,7 @@ def run_parallel_msa(
     config_path: Optional[str] = None,
     log_file_path: Optional[str] = None,
     recursive: bool = False,
+    precision: str = "bf16",
 ) -> None:
     """Generate MSAs in parallel across multiple GPUs, then post-process.
 
@@ -130,6 +133,7 @@ def run_parallel_msa(
         config_path: Optional path to a user config YAML.
         log_file_path: Path to the log file for worker processes.
         recursive: If True, search directories recursively for FASTA files.
+        precision: Model precision (bf16, fp16, int8, int4).
     """
     from ghostfold.core.postprocess import postprocess_msa_outputs
     from ghostfold.io.fasta import read_fasta_from_path
@@ -144,7 +148,7 @@ def run_parallel_msa(
 
     if num_seqs == 1:
         logger.info("Only one sequence found. Running on a single GPU.")
-        _msa_worker(0, project_name, fasta_path, config_path, log_file_path or "", recursive=recursive)
+        _msa_worker(0, project_name, fasta_path, config_path, log_file_path or "", recursive=recursive, precision=precision)
     else:
         temp_dir = Path(tempfile.mkdtemp(prefix="ghostfold_splits_"))
         logger.info(f"Splitting FASTA file into temporary directory: {temp_dir}")
@@ -171,7 +175,7 @@ def run_parallel_msa(
                     gpu_id = i % max_jobs
                     future = executor.submit(
                         _msa_worker, gpu_id, project_name, str(split_path),
-                        config_path, log_file_path or "", recursive,
+                        config_path, log_file_path or "", recursive, precision,
                     )
                     futures[future] = split_path
 

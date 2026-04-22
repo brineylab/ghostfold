@@ -3,7 +3,6 @@ from __future__ import annotations
 import glob
 import os
 import shutil
-from pathlib import Path
 
 from ghostfold.core.logging import get_logger
 

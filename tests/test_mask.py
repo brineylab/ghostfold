@@ -1,5 +1,4 @@
 import pytest
-from pathlib import Path
 
 from ghostfold.msa.mask import mask_a3m_file
 

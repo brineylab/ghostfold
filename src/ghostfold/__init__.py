@@ -3,6 +3,7 @@ from ghostfold.core.pipeline import run_pipeline
 from ghostfold.io.fasta import collect_fasta_paths, read_fasta_from_path
 from ghostfold.msa.mask import mask_a3m_file
 from ghostfold.msa.neff import calculate_neff, run_neff_calculation_in_parallel
+from ghostfold.msa.ranking import rank_and_subsample
 from ghostfold.mutator import MSA_Mutator
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "mask_a3m_file",
     "calculate_neff",
     "run_neff_calculation_in_parallel",
+    "rank_and_subsample",
     "MSA_Mutator",
 ]

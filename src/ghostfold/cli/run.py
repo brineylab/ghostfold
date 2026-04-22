@@ -65,6 +65,11 @@ def run(
         "--multimer-model-version",
         help="AlphaFold2-Multimer model version when a multimer is auto-detected (v1, v2, v3).",
     ),
+    precision: str = typer.Option(
+        "bf16",
+        "--precision",
+        help="Model precision for MSA generation: bf16, fp16, int8, int4. int8/int4 require pip install -e '.[quant]'.",
+    ),
 ) -> None:
     """Run full pipeline: MSA generation then ColabFold structure prediction."""
     from ghostfold.core.logging import setup_logging, get_console
@@ -75,6 +80,11 @@ def run(
     log_path = setup_logging(project_name)
     console = get_console()
     console.print(f"[dim]Log file: {log_path}[/dim]")
+
+    _VALID_PRECISIONS = ["bf16", "fp16", "int8", "int4"]
+    if precision not in _VALID_PRECISIONS:
+        typer.echo(f"Error: --precision must be one of {_VALID_PRECISIONS}. Got: '{precision}'", err=True)
+        raise typer.Exit(code=1)
 
     gpus = num_gpus if num_gpus is not None else detect_gpus()
     try:
@@ -93,6 +103,7 @@ def run(
         config_path=str(config) if config else None,
         log_file_path=str(log_path),
         recursive=recursive,
+        precision=precision,
     )
 
     run_colabfold(

@@ -37,9 +37,15 @@ dev = [
     "pytest-cov",
     "ruff",
 ]
+quant = ["bitsandbytes>=0.41.0"]
+bench = ["biotite>=0.36"]
 
 [project.scripts]
 ghostfold = "ghostfold.cli.app:app"
+
+[tool.pytest.ini_options]
+addopts = "-m 'not slow'"
+markers = ["slow: marks tests as slow integration tests requiring GPU/model downloads (deselect with '-m \"not slow\"')"]
 
 [tool.hatch.version]
 path = "src/ghostfold/_version.py"
