@@ -125,7 +125,7 @@ def main(
 
     dev = torch.device(device if torch.cuda.is_available() or device == "cpu" else "cpu")
     typer.echo(f"Loading ProstT5 ({precision}) on {dev}...")
-    model, tokenizer = _load_model(dev, precision)
+    tokenizer, model = _load_model(dev, precision=precision)
     model.eval()
 
     typer.echo(

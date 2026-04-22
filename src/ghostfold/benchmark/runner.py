@@ -98,7 +98,9 @@ def run_single(
         except Exception:
             pass
 
-    a3m_path = run_dir / "msa.a3m"
+    msa_subdir = run_dir / "msa" / protein_id
+    msa_subdir.mkdir(parents=True, exist_ok=True)
+    a3m_path = msa_subdir / "pstMSA.a3m"
     _write_a3m(a3m_path, protein_id, query_seq, sequences)
 
     row: dict[str, Any] = {
