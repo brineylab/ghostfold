@@ -2,8 +2,7 @@
 
 generate_aa already uses num_beams=1, so only generate_3di is fixed.
 """
-import pytest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock
 import torch
 
 

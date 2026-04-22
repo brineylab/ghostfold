@@ -1,4 +1,4 @@
-from ghostfold.core.colabfold import _build_colabfold_cmd, COLABFOLD_PARAMS
+from ghostfold.core.colabfold import _build_colabfold_cmd
 
 
 def test_build_colabfold_cmd_defaults():

@@ -1,7 +1,7 @@
 import typer
 
 from ghostfold._version import __version__
-from ghostfold.cli import fold, mask, msa, neff, run
+from ghostfold.cli import fold, mask, msa, neff, run, subsample
 
 app = typer.Typer(
     name="ghostfold",
@@ -14,6 +14,7 @@ app.add_typer(fold.app, name="fold")
 app.add_typer(run.app, name="run")
 app.add_typer(mask.app, name="mask")
 app.add_typer(neff.app, name="neff")
+app.add_typer(subsample.app, name="subsample")
 
 
 def _version_callback(value: bool) -> None:

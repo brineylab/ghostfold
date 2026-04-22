@@ -1,6 +1,6 @@
 from unittest.mock import patch, MagicMock
 from ghostfold.msa.generation import generate_sequences_for_coverages_batched
-import tempfile, os
+import tempfile
 
 
 def test_generate_sequences_for_coverages_batched_returns_list():
