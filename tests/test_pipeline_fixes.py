@@ -12,7 +12,8 @@ def test_load_model_uses_bf16_when_requested():
     mock_model.half.return_value = mock_model
 
     with patch("ghostfold.core.pipeline.AutoModelForSeq2SeqLM") as mock_cls, \
-         patch("ghostfold.core.pipeline.T5Tokenizer"):
+         patch("ghostfold.core.pipeline.T5Tokenizer"), \
+         patch("torch.compile", side_effect=lambda m, **kw: m):
         mock_cls.from_pretrained.return_value = mock_model
         device = torch.device("cpu")
         _load_model(device, precision="bf16")
@@ -30,7 +31,8 @@ def test_load_model_uses_fp16_when_requested():
     mock_model.half.return_value = mock_model
 
     with patch("ghostfold.core.pipeline.AutoModelForSeq2SeqLM") as mock_cls, \
-         patch("ghostfold.core.pipeline.T5Tokenizer"):
+         patch("ghostfold.core.pipeline.T5Tokenizer"), \
+         patch("torch.compile", side_effect=lambda m, **kw: m):
         mock_cls.from_pretrained.return_value = mock_model
         device = torch.device("cpu")
         _load_model(device, precision="fp16")
