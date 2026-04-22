@@ -76,8 +76,8 @@ def _load_model(
         attn_impl = "flash_attention_2"
         logger.info("Flash Attention 2 detected — using flash_attention_2 backend.")
     else:
-        attn_impl = "sdpa"
-        logger.info("flash-attn not found — falling back to SDPA backend.")
+        attn_impl = "eager"
+        logger.info("flash-attn not found — falling back to eager attention backend.")
 
     if precision in ("int8", "int4") and importlib.util.find_spec("bitsandbytes") is None:
         raise ImportError(
@@ -85,7 +85,10 @@ def _load_model(
             "Install with: pip install -e '.[quant]'"
         )
 
-    tokenizer = T5Tokenizer.from_pretrained(model_name, do_lower_case=False, legacy=True)
+    hf_token = os.environ.get("HF_TOKEN")
+    if not hf_token:
+        os.environ.setdefault("HF_HUB_DISABLE_IMPLICIT_TOKEN", "1")
+    tokenizer = T5Tokenizer.from_pretrained(model_name, do_lower_case=False, legacy=True, token=hf_token)
 
     if precision in ("int8", "int4"):
         from transformers import BitsAndBytesConfig
@@ -102,15 +105,17 @@ def _load_model(
             quantization_config=bnb_config,
             attn_implementation=attn_impl,
             device_map="auto",
+            token=hf_token,
         )
         logger.info(f"Model loaded with {precision} quantization (bitsandbytes).")
         logger.debug("torch.compile skipped for quantized models (bitsandbytes incompatibility).")
     else:
-        torch_dtype = torch.bfloat16 if precision == "bf16" else torch.float16
+        dtype = torch.bfloat16 if precision == "bf16" else torch.float16
         model = AutoModelForSeq2SeqLM.from_pretrained(
             model_name,
-            torch_dtype=torch_dtype,
+            dtype=dtype,
             attn_implementation=attn_impl,
+            token=hf_token,
         ).to(device)
         logger.info(f"Model loaded with {precision} precision.")
         try:

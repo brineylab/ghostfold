@@ -48,6 +48,7 @@ class DiverseBeamStrategy(BaseStrategy):
                 num_return_sequences=num_beams,
                 do_sample=False,
                 logits_processor=processors,
+                trust_remote_code=True,
             )
 
         threedi_seqs = tokenizer.batch_decode(
