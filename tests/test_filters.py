@@ -1,4 +1,3 @@
-import pytest
 
 from ghostfold.msa.filters import (
     clean_repeats,

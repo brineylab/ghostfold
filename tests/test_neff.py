@@ -1,6 +1,5 @@
 import pytest
 import math
-from pathlib import Path
 
 from ghostfold.msa.neff import parse_a3m, calculate_neff, process_single_file, run_neff_calculation_in_parallel
 

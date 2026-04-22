@@ -1,6 +1,3 @@
-import os
-import pytest
-from pathlib import Path
 
 from ghostfold.core.postprocess import (
     postprocess_msa_outputs,
