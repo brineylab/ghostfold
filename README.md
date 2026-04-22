@@ -42,8 +42,16 @@ If you prefer cloud-based structure prediction, you can use the generated pseudo
 
 ### 3. Install GhostFold
 
+GhostFold uses [uv](https://docs.astral.sh/uv/) for dependency management. Install uv first if you don't have it:
+
 ```bash
-pip install ghostfold
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Then install GhostFold:
+
+```bash
+uv pip install ghostfold
 ```
 
 For development:
@@ -51,7 +59,7 @@ For development:
 ```bash
 git clone https://github.com/brineylab/ghostfold.git
 cd ghostfold
-pip install -e ".[dev]"
+uv sync --extra dev
 ```
 
 ---
