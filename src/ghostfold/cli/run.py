@@ -60,6 +60,11 @@ def run(
         "--localcolabfold-dir",
         help="Path to localcolabfold pixi checkout (default: ./localcolabfold).",
     ),
+    multimer_model_version: str = typer.Option(
+        "v3",
+        "--multimer-model-version",
+        help="AlphaFold2-Multimer model version when a multimer is auto-detected (v1, v2, v3).",
+    ),
     precision: str = typer.Option(
         "bf16",
         "--precision",
@@ -108,4 +113,5 @@ def run(
         mask_fraction=mask_fraction,
         colabfold_env=colabfold_env,
         localcolabfold_dir=localcolabfold_dir,
+        multimer_model_version=multimer_model_version,
     )

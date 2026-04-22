@@ -42,6 +42,11 @@ def fold(
     num_models: int = typer.Option(5, "--num-models", help="Number of AlphaFold2 models to run (default 5)."),
     num_seeds: int = typer.Option(5, "--num-seeds", help="Number of seeds per model (default 5). Models × Seeds = total predictions."),
     num_recycles: int = typer.Option(10, "--num-recycles", help="Number of recycling iterations (default 10)."),
+    multimer_model_version: str = typer.Option(
+        "v3",
+        "--multimer-model-version",
+        help="AlphaFold2-Multimer model version when a multimer is auto-detected (v1, v2, v3).",
+    ),
 ) -> None:
     """Run ColabFold on existing MSAs for structure prediction."""
     from ghostfold.core.logging import setup_logging, get_console
@@ -76,4 +81,5 @@ def fold(
         colabfold_env=colabfold_env,
         localcolabfold_dir=localcolabfold_dir,
         extra_colabfold_params=extra_colabfold_params,
+        multimer_model_version=multimer_model_version,
     )
