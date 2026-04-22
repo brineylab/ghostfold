@@ -1,5 +1,5 @@
 import torch
-from transformers import LogitsProcessorList
+from transformers import GenerationConfig, LogitsProcessorList
 from transformers.modeling_outputs import BaseModelOutput
 
 from ghostfold.msa.model import FiniteLogitsProcessor, generate_aa, preprocess_sequence
@@ -58,6 +58,14 @@ class EncoderPerturbStrategy(BaseStrategy):
             noise = torch.randn_like(hidden) * sigma
             perturbed = hidden + noise
 
+            gen_cfg = GenerationConfig(
+                max_length=max_len,
+                min_length=max_len - 2,
+                num_return_sequences=num_return_sequences,
+                num_beams=1,
+                do_sample=True,
+                **decode_conf,
+            )
             with torch.no_grad():
                 threedi_outputs = model.generate(
                     input_ids=ids.input_ids,
@@ -65,12 +73,8 @@ class EncoderPerturbStrategy(BaseStrategy):
                     # Passing encoder_outputs skips the encoder; decoder attends
                     # to the perturbed hidden states instead of the real ones.
                     encoder_outputs=BaseModelOutput(last_hidden_state=perturbed),
-                    max_length=max_len,
-                    num_return_sequences=num_return_sequences,
-                    num_beams=1,
-                    do_sample=True,
+                    generation_config=gen_cfg,
                     logits_processor=processors,
-                    **decode_conf,
                 )
 
             threedi_seqs = tokenizer.batch_decode(

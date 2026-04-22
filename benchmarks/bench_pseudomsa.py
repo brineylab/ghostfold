@@ -39,25 +39,30 @@ app = typer.Typer(add_completion=False, no_args_is_help=True)
 _ALL_STRATEGIES = ["encoder_perturb", "diverse_beam", "round_trip", "3di_perturb"]
 
 _DEFAULT_CONFIGS: dict[str, dict] = {
+    # 8 noise scales × 17 seqs = 136 raw; subsampled to target_n after length filter
     "encoder_perturb": {
-        "noise_scales": [0.05, 0.15, 0.35],
-        "num_return_sequences": 5,
+        "noise_scales": [0.03, 0.07, 0.12, 0.18, 0.25, 0.35, 0.50, 0.70],
+        "num_return_sequences": 17,
         "decode_conf": {"temperature": 0.7, "top_k": 20, "top_p": 0.95},
     },
+    # 144 beams in chunks of 2 = 72 passes; sampling fallback if OOM
     "diverse_beam": {
-        "num_beams": 8,
+        "num_beams": 144,
+        "chunk_beams": 2,
         "diversity_penalty": 1.0,
         "decode_conf": {"temperature": 0.7, "top_k": 20, "top_p": 0.95},
     },
+    # 16 seeds × 9 rounds = 144 raw; subsampled to target_n
     "round_trip": {
-        "n_seeds": 8,
-        "n_rounds": 4,
+        "n_seeds": 16,
+        "n_rounds": 9,
         "decode_conf": {"temperature": 0.7, "top_k": 20, "top_p": 0.95},
     },
+    # 4 seeds × 6 rates × 6 seqs = 144 raw; subsampled to target_n
     "3di_perturb": {
-        "mutation_rates": [0.05, 0.15, 0.25],
-        "n_3di_seeds": 3,
-        "num_return_sequences": 5,
+        "mutation_rates": [0.05, 0.10, 0.15, 0.20, 0.30, 0.40],
+        "n_3di_seeds": 4,
+        "num_return_sequences": 6,
         "decode_conf": {"temperature": 0.7, "top_k": 20, "top_p": 0.95},
     },
 }
@@ -101,6 +106,13 @@ def main(
             help="Comma-separated protein IDs to run (default: all in queries.fasta).",
         ),
     ] = None,
+    target_n_sequences: Annotated[
+        int,
+        typer.Option(
+            "--target-n",
+            help="Subsample each strategy's output to this many sequences for fair comparison.",
+        ),
+    ] = 128,
 ) -> None:
     """Run the pseudoMSA generation benchmarking study."""
     import torch
@@ -130,7 +142,7 @@ def main(
 
     typer.echo(
         f"Running {len(selected_strategies)} strategies "
-        f"× {'all proteins' if protein_ids is None else len(protein_ids)} proteins"
+        f"x {'all' if protein_ids is None else len(protein_ids)} proteins"
     )
 
     configs = {name: _DEFAULT_CONFIGS[name] for name in selected_strategies}
@@ -146,30 +158,13 @@ def main(
         protein_ids=protein_ids,
         run_colabfold=fold,
         colabfold_gpus=colabfold_gpus,
+        target_n_sequences=target_n_sequences,
     )
 
     csv_path = out_dir / "results.csv"
     typer.echo(f"\nDone. {len(results)} rows written to {csv_path}")
-    _print_summary(results)
 
 
-def _print_summary(results: list[dict]) -> None:
-    """Print a compact per-strategy summary to stdout."""
-    from collections import defaultdict
-
-    by_strategy: dict[str, list[dict]] = defaultdict(list)
-    for row in results:
-        by_strategy[row["strategy"]].append(row)
-
-    header = f"{'Strategy':<20} {'N':>6} {'Neff':>8} {'Time(s)':>8} {'VRAM(GB)':>9}"
-    typer.echo("\n" + header)
-    typer.echo("-" * len(header))
-    for strategy, rows in sorted(by_strategy.items()):
-        n_seqs = sum(r["n_sequences"] for r in rows) / len(rows)
-        neff = sum(r["neff"] for r in rows) / len(rows)
-        t = sum(r["gen_time_s"] for r in rows) / len(rows)
-        vram = sum(r["peak_vram_gb"] for r in rows) / len(rows)
-        typer.echo(f"{strategy:<20} {n_seqs:>6.0f} {neff:>8.3f} {t:>8.1f} {vram:>9.2f}")
 
 
 if __name__ == "__main__":

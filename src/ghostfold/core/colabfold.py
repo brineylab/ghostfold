@@ -344,7 +344,7 @@ def run_colabfold(
                             cache_home,
                             progress,
                             level_task,
-                            file_extra_params,
+                            extra_colabfold_params=file_extra_params,
                         )
                         futures.append(future)
 

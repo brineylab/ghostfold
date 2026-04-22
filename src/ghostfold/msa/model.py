@@ -1,5 +1,5 @@
 import torch
-from transformers import LogitsProcessor, LogitsProcessorList
+from transformers import GenerationConfig, LogitsProcessor, LogitsProcessorList
 from transformers import PreTrainedTokenizer, PreTrainedModel
 from typing import List, Dict, Any
 
@@ -37,18 +37,21 @@ def generate_3di(
 
     processors = LogitsProcessorList([FiniteLogitsProcessor()])
 
+    gen_cfg = GenerationConfig(
+        max_length=max_len,
+        num_return_sequences=num_return_sequences,
+        num_beams=1,
+        do_sample=True,
+        **decode_conf,
+    )
     with torch.no_grad():
-        # Fix 5: sampling (num_beams=1) is 3-5x faster than beam search
+        # sampling (num_beams=1) is 3-5x faster than beam search
         # with comparable diversity for MSA generation
         outputs = model.generate(
             input_ids=ids.input_ids,
             attention_mask=ids.attention_mask,
-            max_length=max_len,
-            num_return_sequences=num_return_sequences,
-            num_beams=1,
-            do_sample=True,
+            generation_config=gen_cfg,
             logits_processor=processors,
-            **decode_conf
         )
 
     decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True, clean_up_tokenization_spaces=True)
@@ -78,16 +81,19 @@ def generate_aa(
 
     processors = LogitsProcessorList([FiniteLogitsProcessor()])
 
+    gen_cfg = GenerationConfig(
+        max_length=max_len,
+        num_return_sequences=num_return_sequences,
+        num_beams=1,
+        do_sample=True,
+        **decode_conf,
+    )
     with torch.no_grad():
         outputs = model.generate(
             input_ids=ids.input_ids,
             attention_mask=ids.attention_mask,
-            max_length=max_len,
-            num_return_sequences=num_return_sequences,
-            num_beams=1,
-            do_sample=True,
+            generation_config=gen_cfg,
             logits_processor=processors,
-            **decode_conf
         )
 
     decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True, clean_up_tokenization_spaces=True)
