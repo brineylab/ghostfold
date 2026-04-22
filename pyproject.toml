@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "Accurate, database-free protein folding from single sequences using structure-aware synthetic MSAs"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 dependencies = [
     "biopython>=1.80",
     "matplotlib>=3.5",
@@ -16,7 +16,9 @@ dependencies = [
     "PyYAML>=6.0",
     "rich>=13.0",
     "scikit-learn>=1.0",
+    "protobuf>=4.0",
     "sentencepiece>=0.1.96",
+    "tiktoken>=0.5",
     "torch>=2.0",
     "transformers>=4.30",
     "typer>=0.12",
