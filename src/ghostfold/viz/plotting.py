@@ -38,16 +38,13 @@ def generate_optional_plots(
 
     # Coevolution plot
     if plot_coevolution_flag:
-        from Bio.SeqRecord import SeqRecord
-        from Bio.Seq import Seq
-        seq_records = [SeqRecord(Seq(s), id=f"seq_{i}", description="") for i, s in enumerate(sequences)]
-        if len(seq_records) > 1:
+        if len(sequences) > 1:
             logger.info(f"Generating coevolution map from {base_name} MSA.")
-            coevol_matrix = get_coevolution_numpy(seq_records)
+            coevol_matrix = get_coevolution_numpy(sequences)
             plot_path = os.path.join(img_dir, f'coevolution_{base_name}_msa.png')
             plot_coevolution(coevol_matrix, plot_path)
             logger.info(f"Coevolution map saved to {plot_path}")
         else:
-            logger.info(f"Skipping coevolution plot for {base_name} as fewer than 2 sequences are available.")
+            logger.info(f"Skipping coevolution plot for {base_name}: fewer than 2 sequences.")
     else:
         logger.debug(f"Coevolution map generation skipped for {base_name}.")
