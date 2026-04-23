@@ -66,7 +66,7 @@ class TestDetectMultimerFromA3m:
 # ---------------------------------------------------------------------------
 
 class TestWriteMultimerPstMsa:
-    def test_query_line_has_colon(self, tmp_path):
+    def test_header_and_query_line(self, tmp_path):
         path = str(tmp_path / "pstMSA.fasta")
         write_multimer_pst_msa(
             output_path=path,
@@ -77,8 +77,9 @@ class TestWriteMultimerPstMsa:
         )
         with open(path) as f:
             lines = f.readlines()
-        assert lines[0].strip() == ">query"
-        assert lines[1].strip() == "AAAA:BBBB"
+        assert lines[0].strip() == "#4,4\t1,1"
+        assert lines[1].strip() == ">1\t2"
+        assert lines[2].strip() == "AAAABBBB"
 
     def test_concat_rows_written_without_colon(self, tmp_path):
         path = str(tmp_path / "pstMSA.fasta")
@@ -93,6 +94,7 @@ class TestWriteMultimerPstMsa:
             content = f.read()
         assert "AAAABBBB" in content
         assert "AAACBBBC" in content
+        assert ":" not in content.split("\n", 3)[3]  # no colon after header+query lines
         assert "concat_0" in content
         assert "concat_1" in content
 
@@ -138,7 +140,7 @@ class TestWriteMultimerPstMsa:
         )
         with open(path) as f:
             content = f.read()
-        # Only query record present
+        # Only query record present (# header line is not a fasta record)
         assert content.count(">") == 1
 
     def test_total_row_length_equals_concat_length(self, tmp_path):
@@ -154,9 +156,9 @@ class TestWriteMultimerPstMsa:
         )
         with open(path) as f:
             lines = f.readlines()
-        seq_lines = [line.strip() for line in lines if not line.startswith(">") and line.strip()]
-        # Query line contains ':' so length is 9, all others must be 8
-        for seq in seq_lines[1:]:
+        seq_lines = [line.strip() for line in lines if not line.startswith(">") and not line.startswith("#") and line.strip()]
+        # All sequence rows (query, concat, per-chain) have length = sum(chain_lengths) = 8
+        for seq in seq_lines:
             assert len(seq) == 8, f"Expected 8, got {len(seq)} for '{seq}'"
 
 
@@ -169,12 +171,22 @@ class TestFoldCliMultimerFlag:
     def test_fold_help_shows_multimer_version(self):
         result = _runner.invoke(app, ["fold", "--help"])  # type: ignore[union-attr]
         assert result.exit_code == 0
-        assert "--multimer-model-version" in result.output
+        assert "--multimer-model-ver" in result.output
 
     def test_run_help_shows_multimer_version(self):
         result = _runner.invoke(app, ["run", "--help"])  # type: ignore[union-attr]
         assert result.exit_code == 0
-        assert "--multimer-model-version" in result.output
+        assert "--multimer-model-ver" in result.output
+
+    def test_msa_help_shows_multimer_msa_mode(self):
+        result = _runner.invoke(app, ["msa", "--help"])  # type: ignore[union-attr]
+        assert result.exit_code == 0
+        assert "--multimer-msa-mode" in result.output
+
+    def test_run_help_shows_multimer_msa_mode(self):
+        result = _runner.invoke(app, ["run", "--help"])  # type: ignore[union-attr]
+        assert result.exit_code == 0
+        assert "--multimer-msa-mode" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -248,3 +260,79 @@ class TestPipelineMultimerDetection:
 
             mock_mono.assert_called_once()
             mock_multi.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# write_multimer_pst_msa: multimer_msa_mode routing
+# ---------------------------------------------------------------------------
+
+class TestMultimerMsaMode:
+    def test_concat_mode_omits_per_chain_rows(self, tmp_path):
+        """run_pipeline with multimer_msa_mode='concat' passes empty per_chain_seqs."""
+        with patch("ghostfold.core.pipeline._load_model") as mock_load, \
+             patch("ghostfold.core.pipeline.process_multimer_run") as mock_multi, \
+             patch("ghostfold.core.pipeline.write_multimer_pst_msa") as mock_write:
+
+            mock_load.return_value = (MagicMock(), MagicMock())
+            mock_multi.return_value = {
+                "concat_seqs": ["AAAABBBB"],
+                "per_chain_seqs": [["AAAC"], ["BBBX"]],
+                "per_chain_evolved_seqs": None,
+            }
+
+            fasta_path = str(tmp_path / "input.fasta")
+            with open(fasta_path, "w") as f:
+                f.write(">complex\nAAAA:BBBB\n")
+
+            from ghostfold.core.pipeline import run_pipeline
+            run_pipeline(
+                project=str(tmp_path / "proj"),
+                fasta_path=fasta_path,
+                config={"decoding_params": {"base": {"top_k": 5}, "matrix": {}}},
+                coverage_list=[1.0],
+                evolve_msa=False,
+                mutation_rates_str="{}",
+                sample_percentage=1.0,
+                plot_msa=False,
+                plot_coevolution=False,
+                show_progress=False,
+                multimer_msa_mode="concat",
+            )
+
+            _, kwargs = mock_write.call_args
+            assert kwargs["per_chain_seqs"] == [[], []]
+
+    def test_concat_per_chain_mode_includes_per_chain_rows(self, tmp_path):
+        """run_pipeline with multimer_msa_mode='concat+per_chain' passes per_chain_seqs."""
+        with patch("ghostfold.core.pipeline._load_model") as mock_load, \
+             patch("ghostfold.core.pipeline.process_multimer_run") as mock_multi, \
+             patch("ghostfold.core.pipeline.write_multimer_pst_msa") as mock_write:
+
+            mock_load.return_value = (MagicMock(), MagicMock())
+            mock_multi.return_value = {
+                "concat_seqs": ["AAAABBBB"],
+                "per_chain_seqs": [["AAAC"], ["BBBX"]],
+                "per_chain_evolved_seqs": None,
+            }
+
+            fasta_path = str(tmp_path / "input.fasta")
+            with open(fasta_path, "w") as f:
+                f.write(">complex\nAAAA:BBBB\n")
+
+            from ghostfold.core.pipeline import run_pipeline
+            run_pipeline(
+                project=str(tmp_path / "proj"),
+                fasta_path=fasta_path,
+                config={"decoding_params": {"base": {"top_k": 5}, "matrix": {}}},
+                coverage_list=[1.0],
+                evolve_msa=False,
+                mutation_rates_str="{}",
+                sample_percentage=1.0,
+                plot_msa=False,
+                plot_coevolution=False,
+                show_progress=False,
+                multimer_msa_mode="concat+per_chain",
+            )
+
+            _, kwargs = mock_write.call_args
+            assert kwargs["per_chain_seqs"] == [["AAAC"], ["BBBX"]]

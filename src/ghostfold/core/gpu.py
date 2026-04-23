@@ -78,6 +78,7 @@ def _msa_worker(
     log_file_path: str,
     recursive: bool = False,
     precision: str = "bf16",
+    multimer_msa_mode: str = "concat+per_chain",
 ) -> None:
     """Worker function that runs the MSA pipeline on a specific GPU.
 
@@ -112,6 +113,7 @@ def _msa_worker(
         recursive=recursive,
         show_progress=False,
         precision=precision,
+        multimer_msa_mode=multimer_msa_mode,
     )
 
 
@@ -123,6 +125,7 @@ def run_parallel_msa(
     log_file_path: Optional[str] = None,
     recursive: bool = False,
     precision: str = "bf16",
+    multimer_msa_mode: str = "concat+per_chain",
 ) -> None:
     """Generate MSAs in parallel across multiple GPUs, then post-process.
 
@@ -148,7 +151,7 @@ def run_parallel_msa(
 
     if num_seqs == 1:
         logger.info("Only one sequence found. Running on a single GPU.")
-        _msa_worker(0, project_name, fasta_path, config_path, log_file_path or "", recursive=recursive, precision=precision)
+        _msa_worker(0, project_name, fasta_path, config_path, log_file_path or "", recursive=recursive, precision=precision, multimer_msa_mode=multimer_msa_mode)
     else:
         temp_dir = Path(tempfile.mkdtemp(prefix="ghostfold_splits_"))
         logger.info(f"Splitting FASTA file into temporary directory: {temp_dir}")
@@ -176,6 +179,7 @@ def run_parallel_msa(
                     future = executor.submit(
                         _msa_worker, gpu_id, project_name, str(split_path),
                         config_path, log_file_path or "", recursive, precision,
+                        multimer_msa_mode,
                     )
                     futures[future] = split_path
 

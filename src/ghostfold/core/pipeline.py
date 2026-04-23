@@ -347,8 +347,13 @@ def write_multimer_pst_msa(
 
     All MSA rows are written without ':'; only the query line carries it.
     """
+    lengths_str = ",".join(str(n) for n in chain_lengths)
+    cardinality_str = ",".join("1" for _ in chain_lengths)
+    chain_header = "\t".join(str(i + 1) for i in range(len(chain_lengths)))
+    clean_query = query_seq.replace(":", "")
     with open(output_path, "w") as fh:
-        fh.write(f">query\n{query_seq}\n")
+        fh.write(f"#{lengths_str}\t{cardinality_str}\n")
+        fh.write(f">{chain_header}\n{clean_query}\n")
         for i, seq in enumerate(concat_seqs):
             fh.write(f">concat_{i}\n{seq}\n")
         for chain_idx, chain_seqs in enumerate(per_chain_seqs):
@@ -374,6 +379,7 @@ def process_multimer_run(
     mutation_rates_str: str,
     sample_percentage: float,
     inference_batch_size: int,
+    multimer_msa_mode: str = "concat+per_chain",
     progress: Optional[Progress] = None,
 ) -> Dict[str, Any]:
     """Run one MSA-generation pass for a multimer complex.
@@ -410,6 +416,7 @@ def process_multimer_run(
             device=device,
             project_dir=run_dir,
             inference_batch_size=inference_batch_size,
+            multimer_msa_mode=multimer_msa_mode,
         )
     except RuntimeError as e:
         if "out of memory" in str(e).lower():
@@ -432,14 +439,18 @@ def process_multimer_run(
     concat_filtered = filter_sequences([concat_query] + concat_generated, len(concat_query))
 
     # Filter each chain block at its own length (include chain query as first entry)
-    per_chain_filtered: List[List[str]] = [
-        filter_sequences([chain] + chain_seqs, chain_lengths[i])
-        for i, (chain, chain_seqs) in enumerate(zip(chains, per_chain_generated))
-    ]
+    per_chain_filtered: List[List[str]] = (
+        [
+            filter_sequences([chain] + chain_seqs, chain_lengths[i])
+            for i, (chain, chain_seqs) in enumerate(zip(chains, per_chain_generated))
+        ]
+        if multimer_msa_mode != "concat"
+        else [[] for _ in chains]
+    )
 
     # Optional per-chain MSA evolution
     per_chain_evolved: Optional[List[List[str]]] = None
-    if evolve_msa:
+    if evolve_msa and multimer_msa_mode != "concat":
         per_chain_evolved = []
         for chain_idx, chain_filtered in enumerate(per_chain_filtered):
             if not chain_filtered:
@@ -489,6 +500,7 @@ def run_pipeline(
     recursive: bool = False,
     show_progress: bool = True,
     precision: str = "bf16",
+    multimer_msa_mode: str = "concat+per_chain",
 ) -> None:
     """Runs the pseudoMSA generation pipeline with OOM handling for model loading."""
     import warnings
@@ -588,6 +600,7 @@ def run_pipeline(
                         mutation_rates_str=mutation_rates_str,
                         sample_percentage=sample_percentage,
                         inference_batch_size=inference_batch_size,
+                        multimer_msa_mode=multimer_msa_mode,
                         progress=progress,
                     )
                     if run_results["concat_seqs"]:
@@ -599,11 +612,15 @@ def run_pipeline(
                         for i, evolved in enumerate(run_results["per_chain_evolved_seqs"]):
                             all_per_chain_seqs[i].extend(evolved)
 
+                per_chain_to_write = (
+                    all_per_chain_seqs if multimer_msa_mode == "concat+per_chain"
+                    else [[] for _ in chains]
+                )
                 write_multimer_pst_msa(
                     output_path=pst_msa_path,
                     query_seq=query_seq,
                     concat_seqs=all_concat_seqs,
-                    per_chain_seqs=all_per_chain_seqs,
+                    per_chain_seqs=per_chain_to_write,
                     chain_lengths=chain_lengths,
                 )
                 logger.info(

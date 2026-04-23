@@ -30,11 +30,21 @@ def msa(
         "--precision",
         help="Model precision: bf16, fp16, int8, int4. int8/int4 require pip install -e '.[quant]'.",
     ),
+    multimer_msa_mode: str = typer.Option(
+        "concat+per_chain",
+        "--multimer-msa-mode",
+        help="Multimer MSA layout: 'concat' (concatenated sequences only) or 'concat+per_chain' (concat + per-chain gap-padded rows).",
+    ),
 ) -> None:
     """Generate pseudoMSAs from single sequences using ProstT5."""
     _VALID_PRECISIONS = ["bf16", "fp16", "int8", "int4"]
     if precision not in _VALID_PRECISIONS:
         typer.echo(f"Error: --precision must be one of {_VALID_PRECISIONS}. Got: '{precision}'", err=True)
+        raise typer.Exit(code=1)
+
+    _VALID_MULTIMER_MODES = ["concat", "concat+per_chain"]
+    if multimer_msa_mode not in _VALID_MULTIMER_MODES:
+        typer.echo(f"Error: --multimer-msa-mode must be one of {_VALID_MULTIMER_MODES}. Got: '{multimer_msa_mode}'", err=True)
         raise typer.Exit(code=1)
 
     from ghostfold.core.logging import setup_logging, get_console
@@ -60,4 +70,5 @@ def msa(
         num_runs=num_runs,
         recursive=recursive,
         precision=precision,
+        multimer_msa_mode=multimer_msa_mode,
     )

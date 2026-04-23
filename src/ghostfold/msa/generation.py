@@ -238,6 +238,7 @@ def generate_multimer_sequences(
     device: Any,
     project_dir: str,
     inference_batch_size: int,
+    multimer_msa_mode: str = "concat+per_chain",
 ) -> Tuple[List[str], List[List[str]]]:
     """Generate pseudoMSA sequences for a multimer complex.
 
@@ -282,22 +283,23 @@ def generate_multimer_sequences(
     )
 
     per_chain_seqs: List[List[str]] = []
-    for chain_idx, chain in enumerate(chains):
-        chain_dir = os.path.join(project_dir, f"chain_{chain_idx}")
-        os.makedirs(chain_dir, exist_ok=True)
-        chain_seqs = generate_sequences_for_coverages_batched(
-            query_seq=chain,
-            full_len=len(chain),
-            decoding_configs=decoding_configs,
-            num_return_sequences=num_return_sequences,
-            multiplier=multiplier,
-            coverage_list=coverage_list,
-            model=model,
-            tokenizer=tokenizer,
-            device=device,
-            project_dir=chain_dir,
-            inference_batch_size=inference_batch_size,
-        )
-        per_chain_seqs.append(chain_seqs)
+    if multimer_msa_mode != "concat":
+        for chain_idx, chain in enumerate(chains):
+            chain_dir = os.path.join(project_dir, f"chain_{chain_idx}")
+            os.makedirs(chain_dir, exist_ok=True)
+            chain_seqs = generate_sequences_for_coverages_batched(
+                query_seq=chain,
+                full_len=len(chain),
+                decoding_configs=decoding_configs,
+                num_return_sequences=num_return_sequences,
+                multiplier=multiplier,
+                coverage_list=coverage_list,
+                model=model,
+                tokenizer=tokenizer,
+                device=device,
+                project_dir=chain_dir,
+                inference_batch_size=inference_batch_size,
+            )
+            per_chain_seqs.append(chain_seqs)
 
     return concat_seqs, per_chain_seqs
