@@ -36,20 +36,53 @@ import typer
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
-_ALL_STRATEGIES = ["encoder_perturb", "diverse_beam", "round_trip", "3di_perturb"]
+_ALL_STRATEGIES = [
+    "baseline",
+    "encoder_only_3di_sub",
+    "temperature_sweep",
+    "embedding_walk_full",
+    "embedding_walk_encoder",
+    "encoder_perturb",
+    "round_trip",
+    "3di_perturb",
+]
 
 _DEFAULT_CONFIGS: dict[str, dict] = {
+    "baseline": {
+        "num_return_sequences": 100,
+        "inference_batch_size": 8,
+        "decode_conf": {"temperature": 0.7, "top_k": 20, "top_p": 0.95},
+        "coverage_values": [1.0],
+    },
+    "encoder_only_3di_sub": {
+        "mutation_rates": [0.05, 0.10, 0.20, 0.30, 0.40],
+        "variants_per_rate": 10,
+        "num_return_sequences": 3,
+        "decode_conf": {"temperature": 0.7, "top_k": 20, "top_p": 0.95},
+    },
+    "temperature_sweep": {
+        "temperatures": [0.5, 0.8, 1.0, 1.2, 1.5, 1.8, 2.0],
+        "num_return_sequences": 20,
+        "base_decode_conf": {"top_p": 0.85, "top_k": 3, "repetition_penalty": 1.2},
+    },
+    "embedding_walk_full": {
+        "noise_scales": [0.03, 0.07, 0.12, 0.20, 0.35],
+        "depth_decay": 0.8,
+        "num_return_sequences": 25,
+        "decode_conf": {"temperature": 0.7, "top_k": 20, "top_p": 0.95},
+    },
+    "embedding_walk_encoder": {
+        "n_pca_components": 10,
+        "step_sizes": [-2.0, -1.0, -0.5, 0.5, 1.0, 2.0],
+        "n_noise_samples": 50,
+        "noise_sigma": 0.1,
+        "num_return_sequences": 15,
+        "decode_conf": {"temperature": 0.7, "top_k": 20, "top_p": 0.95},
+    },
     # 8 noise scales × 17 seqs = 136 raw; subsampled to target_n after length filter
     "encoder_perturb": {
         "noise_scales": [0.03, 0.07, 0.12, 0.18, 0.25, 0.35, 0.50, 0.70],
         "num_return_sequences": 17,
-        "decode_conf": {"temperature": 0.7, "top_k": 20, "top_p": 0.95},
-    },
-    # 144 beams in chunks of 2 = 72 passes; sampling fallback if OOM
-    "diverse_beam": {
-        "num_beams": 144,
-        "chunk_beams": 2,
-        "diversity_penalty": 1.0,
         "decode_conf": {"temperature": 0.7, "top_k": 20, "top_p": 0.95},
     },
     # 16 seeds × 9 rounds = 144 raw; subsampled to target_n
@@ -72,7 +105,11 @@ _DEFAULT_CONFIGS: dict[str, dict] = {
 def main(
     bench_dir: Annotated[
         Path,
-        typer.Option("--bench-dir", help="Directory with queries.fasta and reference PDBs.", exists=True),
+        typer.Option(
+            "--bench-dir",
+            help="Benchmark directory with fasta/<id>.fasta and pdb/<id>.pdb subdirs.",
+            exists=True,
+        ),
     ],
     out_dir: Annotated[
         Path,
@@ -140,6 +177,23 @@ def main(
     tokenizer, model = _load_model(dev, precision=precision)
     model.eval()
 
+    # Load optional encoder models for strategies that need them
+    encoder_model = None
+    cnn_3di = None
+    needs_encoder = any(s in selected_strategies for s in ("encoder_only_3di_sub", "embedding_walk_encoder"))
+    if needs_encoder:
+        from transformers import T5EncoderModel
+        typer.echo("Loading T5EncoderModel for encoder-only strategies...")
+        encoder_model = T5EncoderModel.from_pretrained(
+            "Rostlab/ProstT5_fp16", cache_dir=None
+        ).to(dev).eval()
+
+    needs_cnn = "encoder_only_3di_sub" in selected_strategies
+    if needs_cnn:
+        from ghostfold.msa.strategies.encoder_only_3di_sub import load_cnn_3di
+        typer.echo("Loading CNN 3Di head (downloading if needed)...")
+        cnn_3di = load_cnn_3di(dev)
+
     typer.echo(
         f"Running {len(selected_strategies)} strategies "
         f"x {'all' if protein_ids is None else len(protein_ids)} proteins"
@@ -159,6 +213,8 @@ def main(
         run_colabfold=fold,
         colabfold_gpus=colabfold_gpus,
         target_n_sequences=target_n_sequences,
+        encoder_model=encoder_model,
+        cnn_3di=cnn_3di,
     )
 
     csv_path = out_dir / "results.csv"

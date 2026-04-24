@@ -51,8 +51,16 @@ def _mock_model(query_seq: str):
 class TestBaseStrategy:
     def test_strategies_dict_complete(self):
         assert set(STRATEGIES.keys()) == {
-            "encoder_perturb", "diverse_beam", "round_trip", "3di_perturb"
+            "baseline",
+            "encoder_only_3di_sub",
+            "temperature_sweep",
+            "embedding_walk_full",
+            "embedding_walk_encoder",
+            "encoder_perturb",
+            "round_trip",
+            "3di_perturb",
         }
+        assert "diverse_beam" not in STRATEGIES
 
     def test_each_strategy_is_base_subclass(self):
         for cls in STRATEGIES.values():
@@ -125,7 +133,8 @@ class TestDiverseBeamStrategy:
         tok = _mock_tokenizer()
         device = torch.device("cpu")
 
-        strat = STRATEGIES["diverse_beam"]()
+        from ghostfold.msa.strategies.diverse_beam import DiverseBeamStrategy
+        strat = DiverseBeamStrategy()
         result = strat.generate_msa(QUERY, model, tok, device, {"num_beams": 4})
         assert isinstance(result, list)
 
@@ -136,7 +145,8 @@ class TestDiverseBeamStrategy:
         tok = _mock_tokenizer()
         device = torch.device("cpu")
 
-        strat = STRATEGIES["diverse_beam"]()
+        from ghostfold.msa.strategies.diverse_beam import DiverseBeamStrategy
+        strat = DiverseBeamStrategy()
         strat.generate_msa(QUERY, model, tok, device, {"num_beams": 8, "diversity_penalty": 1.5})
         call_kwargs = model.generate.call_args.kwargs
         assert call_kwargs["num_beams"] == 8
