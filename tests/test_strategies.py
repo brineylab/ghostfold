@@ -231,3 +231,150 @@ class TestThreeDiPerturbStrategy:
         }
         result = strat.generate_msa(QUERY, model, tok, device, config)
         assert isinstance(result, list)
+
+
+# ---------------------------------------------------------------------------
+# BaselineStrategy
+# ---------------------------------------------------------------------------
+
+class TestBaselineStrategy:
+    @patch("ghostfold.msa.strategies.baseline.generate_sequences_for_coverages_batched")
+    def test_returns_list(self, mock_gen):
+        mock_gen.return_value = [QUERY, QUERY[::-1]]
+        from ghostfold.msa.strategies.baseline import BaselineStrategy
+        import torch
+        strat = BaselineStrategy()
+        result = strat.generate_msa(QUERY, _mock_model(QUERY), _mock_tokenizer(), torch.device("cpu"), {})
+        assert isinstance(result, list)
+
+    @patch("ghostfold.msa.strategies.baseline.generate_sequences_for_coverages_batched")
+    def test_calls_batched_generator(self, mock_gen):
+        mock_gen.return_value = []
+        from ghostfold.msa.strategies.baseline import BaselineStrategy
+        import torch
+        strat = BaselineStrategy()
+        strat.generate_msa(QUERY, _mock_model(QUERY), _mock_tokenizer(), torch.device("cpu"), {
+            "num_return_sequences": 50,
+        })
+        assert mock_gen.called
+
+
+# ---------------------------------------------------------------------------
+# EncoderOnly3DiSubStrategy
+# ---------------------------------------------------------------------------
+
+class TestEncoderOnly3DiSubStrategy:
+    @patch("ghostfold.msa.strategies.encoder_only_3di_sub.generate_aa")
+    def test_returns_list(self, mock_gen_aa):
+        mock_gen_aa.return_value = [QUERY]
+        import torch
+        from ghostfold.msa.strategies.encoder_only_3di_sub import EncoderOnly3DiSubStrategy
+
+        mock_cnn = MagicMock()
+        L = len(QUERY)
+        logits = torch.zeros(1, 20, L)
+        logits[0, 0, :] = 10.0
+        mock_cnn.return_value = logits
+
+        mock_enc_model = MagicMock()
+        enc_out = MagicMock()
+        enc_out.last_hidden_state = torch.randn(1, L, 64)
+        mock_enc_model.return_value = enc_out
+
+        strat = EncoderOnly3DiSubStrategy()
+        result = strat.generate_msa(
+            QUERY,
+            _mock_model(QUERY),
+            _mock_tokenizer(),
+            torch.device("cpu"),
+            {
+                "encoder_model": mock_enc_model,
+                "cnn_3di": mock_cnn,
+                "mutation_rates": [0.1],
+                "variants_per_rate": 2,
+                "num_return_sequences": 1,
+                "decode_conf": {},
+            },
+        )
+        assert isinstance(result, list)
+
+    @patch("ghostfold.msa.strategies.encoder_only_3di_sub.generate_aa")
+    def test_mutation_produces_variants(self, mock_gen_aa):
+        mock_gen_aa.return_value = [QUERY]
+        import torch
+        from ghostfold.msa.strategies.encoder_only_3di_sub import EncoderOnly3DiSubStrategy, _predict_3di_encoder
+
+        mock_cnn = MagicMock()
+        L = len(QUERY)
+        logits = torch.zeros(1, 20, L)
+        mock_cnn.return_value = logits
+
+        mock_enc = MagicMock()
+        enc_out = MagicMock()
+        enc_out.last_hidden_state = torch.randn(1, L, 64)
+        mock_enc.return_value = enc_out
+        mock_enc_tokenizer = _mock_tokenizer()
+
+        threedi = _predict_3di_encoder(QUERY, mock_enc, mock_enc_tokenizer, torch.device("cpu"), mock_cnn)
+        assert len(threedi) == L
+        assert all(c in "acdefghiklmnpqrstvwy" for c in threedi)
+
+
+# ---------------------------------------------------------------------------
+# TemperatureSweepStrategy
+# ---------------------------------------------------------------------------
+
+class TestTemperatureSweepStrategy:
+    @patch("ghostfold.msa.strategies.temperature_sweep.generate_aa")
+    @patch("ghostfold.msa.strategies.temperature_sweep.generate_3di")
+    def test_returns_list(self, mock_3di, mock_aa):
+        mock_3di.return_value = ["acdefghiklmnpqrstvwy"]
+        mock_aa.return_value = [QUERY] * 5
+        import torch
+        from ghostfold.msa.strategies.temperature_sweep import TemperatureSweepStrategy
+        strat = TemperatureSweepStrategy()
+        result = strat.generate_msa(
+            QUERY,
+            _mock_model(QUERY),
+            _mock_tokenizer(),
+            torch.device("cpu"),
+            {"temperatures": [0.5, 1.0], "num_return_sequences": 5, "base_decode_conf": {}},
+        )
+        assert isinstance(result, list)
+
+    @patch("ghostfold.msa.strategies.temperature_sweep.generate_aa")
+    @patch("ghostfold.msa.strategies.temperature_sweep.generate_3di")
+    def test_called_once_per_temperature(self, mock_3di, mock_aa):
+        mock_3di.return_value = ["acdefghiklmnpqrstvwy"]
+        mock_aa.return_value = [QUERY]
+        import torch
+        from ghostfold.msa.strategies.temperature_sweep import TemperatureSweepStrategy
+        strat = TemperatureSweepStrategy()
+        temps = [0.5, 1.0, 1.5]
+        strat.generate_msa(
+            QUERY,
+            _mock_model(QUERY),
+            _mock_tokenizer(),
+            torch.device("cpu"),
+            {"temperatures": temps, "num_return_sequences": 1, "base_decode_conf": {}},
+        )
+        assert mock_aa.call_count == len(temps)
+
+    @patch("ghostfold.msa.strategies.temperature_sweep.generate_aa")
+    @patch("ghostfold.msa.strategies.temperature_sweep.generate_3di")
+    def test_repetition_penalty_included(self, mock_3di, mock_aa):
+        mock_3di.return_value = ["acdefghiklmnpqrstvwy"]
+        mock_aa.return_value = [QUERY]
+        import torch
+        from ghostfold.msa.strategies.temperature_sweep import TemperatureSweepStrategy, _DEFAULT_REPETITION_PENALTY
+        strat = TemperatureSweepStrategy()
+        strat.generate_msa(
+            QUERY,
+            _mock_model(QUERY),
+            _mock_tokenizer(),
+            torch.device("cpu"),
+            {"temperatures": [1.0], "num_return_sequences": 1, "base_decode_conf": {}},
+        )
+        _, call_kwargs = mock_aa.call_args
+        passed_conf = call_kwargs.get("decode_conf", mock_aa.call_args[0][5] if len(mock_aa.call_args[0]) > 5 else {})
+        assert passed_conf.get("repetition_penalty") == _DEFAULT_REPETITION_PENALTY
