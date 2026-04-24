@@ -139,6 +139,50 @@ def test_msa_precision_default_is_bf16():
         assert call_kwargs.get("precision", "bf16") == "bf16"
 
 
+class TestSetupCommand:
+    def test_help(self):
+        result = runner.invoke(app, ["setup", "--help"])
+        output = _plain(result.output)
+        assert result.exit_code == 0
+        assert "--colabfold-dir" in output
+        assert "--skip-weights" in output
+        assert "--hf-token" in output
+
+    def test_setup_calls_run_setup(self, monkeypatch):
+        calls = []
+
+        def fake_run_setup(colabfold_dir, skip_weights, hf_token):
+            calls.append({"colabfold_dir": colabfold_dir, "skip_weights": skip_weights, "hf_token": hf_token})
+
+        monkeypatch.setattr("ghostfold.cli.setup.run_setup", fake_run_setup)
+        result = runner.invoke(app, ["setup"])
+        assert result.exit_code == 0
+        assert len(calls) == 1
+        assert calls[0]["skip_weights"] is False
+        assert calls[0]["hf_token"] is None
+
+    def test_setup_skip_weights_flag(self, monkeypatch):
+        calls = []
+
+        def fake_run_setup(colabfold_dir, skip_weights, hf_token):
+            calls.append(skip_weights)
+
+        monkeypatch.setattr("ghostfold.cli.setup.run_setup", fake_run_setup)
+        result = runner.invoke(app, ["setup", "--skip-weights"])
+        assert result.exit_code == 0
+        assert calls[0] is True
+
+    def test_setup_exits_nonzero_on_setup_error(self, monkeypatch):
+        from ghostfold.core.setup import GhostFoldSetupError
+
+        def fake_run_setup(colabfold_dir, skip_weights, hf_token):
+            raise GhostFoldSetupError("pixi not found")
+
+        monkeypatch.setattr("ghostfold.cli.setup.run_setup", fake_run_setup)
+        result = runner.invoke(app, ["setup"])
+        assert result.exit_code == 1
+
+
 def test_msa_precision_invalid_rejected():
     """--precision with invalid value must exit with non-zero code."""
     result = runner.invoke(app, [
