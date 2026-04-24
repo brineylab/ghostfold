@@ -45,6 +45,9 @@ _ALL_STRATEGIES = [
     "encoder_perturb",
     "round_trip",
     "3di_perturb",
+    "single_sequence",
+    "cnn_3di_predict",
+    "cnn_aa_predict",
 ]
 
 _DEFAULT_CONFIGS: dict[str, dict] = {
@@ -97,6 +100,20 @@ _DEFAULT_CONFIGS: dict[str, dict] = {
         "n_3di_seeds": 4,
         "num_return_sequences": 6,
         "decode_conf": {"temperature": 0.7, "top_k": 20, "top_p": 0.95},
+    },
+    # single_sequence: no generation at all — just the query in the A3M
+    "single_sequence": {},
+    # 5 rates × 4 perturbations × 7 seqs = 140 raw; no separate encoder model needed
+    "cnn_3di_predict": {
+        "mutation_rates": [0.05, 0.10, 0.20, 0.30, 0.40],
+        "n_perturbations": 4,
+        "num_return_sequences": 7,
+        "decode_conf": {"temperature": 0.7, "top_k": 20, "top_p": 0.95},
+    },
+    # 128 3Di samples → 128 CNN-predicted AA sequences
+    "cnn_aa_predict": {
+        "n_3di_seeds": 128,
+        "decode_conf": {"temperature": 1.0, "top_k": 20, "top_p": 0.95},
     },
 }
 
@@ -177,22 +194,38 @@ def main(
     tokenizer, model = _load_model(dev, precision=precision)
     model.eval()
 
-    # Load optional encoder models for strategies that need them
+    # Load optional models; each is kept on CPU until the runner moves it to GPU
+    # so that strategies which don't need a model don't pay the VRAM cost.
     encoder_model = None
     cnn_3di = None
-    needs_encoder = any(s in selected_strategies for s in ("encoder_only_3di_sub", "embedding_walk_encoder"))
-    if needs_encoder:
-        from transformers import T5EncoderModel
-        typer.echo("Loading T5EncoderModel for encoder-only strategies...")
-        encoder_model = T5EncoderModel.from_pretrained(
-            "Rostlab/ProstT5_fp16", cache_dir=None
-        ).to(dev).eval()
+    cnn_aa = None
 
-    needs_cnn = "encoder_only_3di_sub" in selected_strategies
-    if needs_cnn:
+    needs_encoder = any(
+        s in selected_strategies for s in ("encoder_only_3di_sub", "embedding_walk_encoder")
+    )
+    if needs_encoder:
+        import torch as _torch
+        from transformers import T5EncoderModel
+        typer.echo("Loading T5EncoderModel for encoder-only strategies (bf16)...")
+        encoder_model = T5EncoderModel.from_pretrained(
+            "Rostlab/ProstT5_fp16",
+            torch_dtype=_torch.bfloat16,
+            cache_dir=None,
+        ).cpu().eval()  # start on CPU; runner moves to GPU when needed
+
+    needs_cnn_3di = any(
+        s in selected_strategies for s in ("encoder_only_3di_sub", "cnn_3di_predict")
+    )
+    if needs_cnn_3di:
         from ghostfold.msa.strategies.encoder_only_3di_sub import load_cnn_3di
         typer.echo("Loading CNN 3Di head (downloading if needed)...")
         cnn_3di = load_cnn_3di(dev)
+
+    needs_cnn_aa = "cnn_aa_predict" in selected_strategies
+    if needs_cnn_aa:
+        from ghostfold.msa.strategies.encoder_only_3di_sub import load_cnn_aa
+        typer.echo("Loading CNN AA head (downloading if needed)...")
+        cnn_aa = load_cnn_aa(dev)
 
     typer.echo(
         f"Running {len(selected_strategies)} strategies "
@@ -215,6 +248,7 @@ def main(
         target_n_sequences=target_n_sequences,
         encoder_model=encoder_model,
         cnn_3di=cnn_3di,
+        cnn_aa=cnn_aa,
     )
 
     csv_path = out_dir / "results.csv"

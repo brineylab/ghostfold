@@ -188,6 +188,122 @@ def _run_colabfold_subprocess(
         raise subprocess.CalledProcessError(proc.returncode, cmd)
 
 
+def run_colabfold_flat(
+    input_dir: Path,
+    output_dir: Path,
+    num_gpus: int = 1,
+    max_seq: int = 32,
+    max_extra_seq: int = 64,
+    colabfold_env: str = DEFAULT_COLABFOLD_ENV,
+    localcolabfold_dir: Path | str | None = None,
+    extra_colabfold_params: Optional[dict] = None,
+) -> None:
+    """Run a single colabfold_batch call on all A3M files in *input_dir*.
+
+    Passes the entire directory to one colabfold_batch process so JAX/XLA
+    compiles once per unique sequence length rather than once per file.
+    Output subdirectories are named after the stem of each input A3M file,
+    i.e.  ``<protein_id>__<strategy>/`` inside *output_dir*.
+
+    Args:
+        input_dir: Flat directory containing ``<stem>.a3m`` files.
+        output_dir: Directory where ColabFold writes per-stem prediction subdirs.
+        num_gpus: GPUs to make visible (``CUDA_VISIBLE_DEVICES=0,1,...``).
+        max_seq: ColabFold ``--max-seq`` value.
+        max_extra_seq: ColabFold ``--max-extra-seq`` value.
+    """
+    try:
+        launcher = ensure_colabfold_ready(
+            colabfold_env=colabfold_env,
+            localcolabfold_dir=localcolabfold_dir,
+        )
+    except ColabFoldSetupError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+    resolved_lcf = resolve_localcolabfold_dir(localcolabfold_dir)
+    cache_home = str(resolved_lcf) if resolved_lcf.exists() else None
+
+    a3m_files = sorted(Path(input_dir).glob("*.a3m"))
+    if not a3m_files:
+        logger.warning(f"run_colabfold_flat: no .a3m files in {input_dir}")
+        return
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    gpu_ids = ",".join(str(i) for i in range(num_gpus))
+
+    effective_params = list(COLABFOLD_PARAMS)
+    if extra_colabfold_params:
+        for flag, value in extra_colabfold_params.items():
+            if flag in effective_params:
+                idx = effective_params.index(flag)
+                if idx + 1 < len(effective_params) and not effective_params[idx + 1].startswith("--"):
+                    effective_params[idx + 1] = str(value)
+                else:
+                    effective_params.insert(idx + 1, str(value))
+            else:
+                effective_params.extend([flag, str(value)])
+
+    models_per_file = _get_colabfold_total_models(effective_params)
+    total_models = len(a3m_files) * models_per_file
+
+    cmd = _build_colabfold_cmd(
+        msa_file=str(input_dir),
+        output_dir=str(output_dir),
+        max_seq=max_seq,
+        max_extra_seq=max_extra_seq,
+        launcher_prefix=launcher.command_prefix,
+        extra_colabfold_params=extra_colabfold_params,
+    )
+
+    env = os.environ.copy()
+    env["CUDA_VISIBLE_DEVICES"] = gpu_ids
+    env["PYTHONUNBUFFERED"] = "1"
+    env["MPLBACKEND"] = "Agg"
+    if cache_home is not None:
+        env["XDG_CACHE_HOME"] = cache_home
+
+    console = get_console()
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total}"),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        console=console,
+        transient=False,
+    ) as progress:
+        task = progress.add_task(
+            f"[green]ColabFold[/] — {len(a3m_files)} MSAs (single batch)",
+            total=total_models,
+        )
+
+        proc = subprocess.Popen(
+            cmd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            cwd=str(launcher.cwd) if launcher.cwd is not None else None,
+            text=True,
+            bufsize=1,
+        )
+
+        for line in proc.stdout:  # type: ignore[union-attr]
+            line = line.rstrip()
+            logger.info(line)
+            if _MODEL_DONE_RE.search(line):
+                progress.update(task, advance=1)
+
+        proc.wait()
+        if proc.returncode != 0:
+            raise subprocess.CalledProcessError(proc.returncode, cmd)
+
+    logger.info(f"run_colabfold_flat: finished. Predictions in {output_dir}")
+
+
 def run_colabfold(
     project_name: str,
     num_gpus: int,

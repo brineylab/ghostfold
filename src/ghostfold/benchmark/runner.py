@@ -1,7 +1,7 @@
 """Per-protein × per-strategy benchmark orchestration."""
 import csv
-import os
 import random
+import shutil
 import time
 from pathlib import Path
 from typing import Any
@@ -87,10 +87,38 @@ def _variant_param(strategy_name: str, config: dict) -> str:
 
 
 def _subsample(sequences: list[str], target: int) -> list[str]:
-    """Random subsample down to *target* without replacement."""
     if len(sequences) <= target:
         return sequences
     return random.sample(sequences, target)
+
+
+def _manage_models_for_strategy(
+    strategy: "BaseStrategy",
+    encoder_model: Any | None,
+    device: torch.device,
+) -> None:
+    """Move encoder_model on/off GPU based on what the strategy declares it needs.
+
+    The main model and CNNs are assumed always on GPU (CNNs are small; the main
+    model is needed by almost every strategy).  The encoder (T5EncoderModel,
+    ~5.6 GB) is the one that can crowd out generation when not required.
+    """
+    if encoder_model is None:
+        return
+
+    needs_encoder = "encoder" in strategy.models_needed
+    current_device = next(encoder_model.parameters()).device
+
+    if needs_encoder and current_device.type == "cpu":
+        logger.info(f"Moving encoder model to {device} for {strategy.name}")
+        encoder_model.to(device)
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+    elif not needs_encoder and current_device.type != "cpu":
+        logger.info(f"Moving encoder model to CPU before {strategy.name}")
+        encoder_model.cpu()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
 
 def _generate_msa(
@@ -178,52 +206,56 @@ def _batch_fold_and_score(
     progress: Progress,
     task_id: TaskID,
 ) -> None:
-    """Fold all MSAs in a single ColabFold run, then parse scores back into rows."""
+    """Fold all MSAs in one colabfold_batch call, then parse scores back into rows.
+
+    All A3M files are copied into a flat staging directory so that a single
+    colabfold_batch process handles everything — avoiding the per-file JAX/XLA
+    recompilation that occurs when spawning one subprocess per MSA.
+
+    Output directories are named ``<protein_id>__<strategy>`` (the stem of each
+    staged A3M), matching the keys in *staging_map* for result look-up.
+    """
     from ghostfold.benchmark.colabfold_parser import parse_best_scores
     from ghostfold.benchmark.structure_metrics import compute_structure_metrics
-    from ghostfold.core.colabfold import run_colabfold
+    from ghostfold.core.colabfold import run_colabfold_flat
 
-    batch_root = out_dir / "_cf_batch"
-    msa_stage = batch_root / "msa"
-    msa_stage.mkdir(parents=True, exist_ok=True)
+    flat_msa_dir = out_dir / "_cf_batch" / "flat_msa"
+    preds_dir = out_dir / "_cf_batch" / "preds"
+    flat_msa_dir.mkdir(parents=True, exist_ok=True)
+    preds_dir.mkdir(parents=True, exist_ok=True)
 
     staging_map: dict[str, tuple[dict, Path | None]] = {}
 
     for row, a3m_path, _run_dir, ref_pdb in pending:
         if not a3m_path.exists():
             continue
-        dirname = f"{row['protein_id']}__{row['strategy']}"
-        link_dir = msa_stage / dirname
-        link_dir.mkdir(exist_ok=True)
-        link_path = link_dir / "pstMSA.a3m"
-        if link_path.exists() or link_path.is_symlink():
-            link_path.unlink()
-        os.symlink(a3m_path.resolve(), link_path)
-        staging_map[dirname] = (row, ref_pdb)
+        stem = f"{row['protein_id']}__{row['strategy']}"
+        dest = flat_msa_dir / f"{stem}.a3m"
+        shutil.copy2(a3m_path, dest)
+        staging_map[stem] = (row, ref_pdb)
 
     if not staging_map:
         logger.warning("No valid MSAs to fold.")
         return
 
-    progress.update(task_id, description=f"[green]ColabFold[/] folding {len(staging_map)} MSAs…", total=len(staging_map), completed=0)
+    progress.update(
+        task_id,
+        description=f"[green]ColabFold[/] — {len(staging_map)} MSAs (single batch)…",
+        total=len(staging_map),
+        completed=0,
+    )
 
     try:
-        run_colabfold(
-            project_name=str(batch_root),
-            num_gpus=colabfold_gpus,
-            subsample=False,
-        )
+        run_colabfold_flat(flat_msa_dir, preds_dir, colabfold_gpus)
     except Exception as exc:
-        logger.error(f"Batch ColabFold run failed: {exc}")
+        logger.error(f"ColabFold batch failed: {exc}")
         return
 
-    preds_root = batch_root / "subsample_1" / "preds"
-
-    for i, (dirname, (row, ref_pdb)) in enumerate(staging_map.items()):
-        progress.update(task_id, description=f"[green]Scoring[/] {dirname}…", completed=i + 1)
-        cf_out = preds_root / dirname
+    for i, (stem, (row, ref_pdb)) in enumerate(staging_map.items()):
+        progress.update(task_id, description=f"[green]Scoring[/] {stem}…", completed=i + 1)
+        cf_out = preds_dir / stem
         if not cf_out.exists():
-            logger.warning(f"No preds dir found for {dirname}")
+            logger.warning(f"No preds dir found for {stem}")
             continue
 
         try:
@@ -240,11 +272,10 @@ def _batch_fold_and_score(
                 row["rmsd"] = round(metrics["rmsd"], 4)
                 row["tm_score"] = round(metrics["tm_score"], 4)
             except Exception as exc:
-                logger.warning(f"Structure comparison failed for {dirname}: {exc}")
+                logger.warning(f"Structure comparison failed for {stem}: {exc}")
 
 
 def _print_summary(results: list[dict], console: Any) -> None:
-    """Render a per-strategy summary table to the console."""
     from collections import defaultdict
 
     by_strategy: dict[str, list[dict]] = defaultdict(list)
@@ -292,6 +323,7 @@ def run_benchmark(
     device: torch.device,
     encoder_model: Any | None = None,
     cnn_3di: Any | None = None,
+    cnn_aa: Any | None = None,
     protein_ids: list[str] | None = None,
     run_colabfold: bool = False,
     colabfold_gpus: int = 1,
@@ -301,7 +333,10 @@ def run_benchmark(
 
     Phase 1: Generate MSAs for all proteins × strategies, subsampled to
              *target_n_sequences* for a fair cross-strategy comparison.
-    Phase 2: If run_colabfold, fold all MSAs in a single ColabFold invocation.
+             Before each strategy, the encoder model is moved on/off GPU
+             according to the strategy's ``models_needed`` declaration.
+    Phase 2: If run_colabfold, fold all MSAs in a single colabfold_batch
+             invocation (one JAX compilation per unique sequence length).
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     proteins = [
@@ -344,6 +379,10 @@ def run_benchmark(
                 cfg = dict(strategy_configs.get(name, {}))
                 cfg["encoder_model"] = encoder_model
                 cfg["cnn_3di"] = cnn_3di
+                cfg["cnn_aa"] = cnn_aa
+
+                # Move encoder on/off GPU based on what this strategy needs
+                _manage_models_for_strategy(strategy, encoder_model, device)
 
                 row, a3m_path = _generate_msa(
                     protein_id=pid,

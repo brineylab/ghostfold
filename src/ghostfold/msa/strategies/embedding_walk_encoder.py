@@ -50,6 +50,7 @@ class EmbeddingWalkEncoderStrategy(BaseStrategy):
     """Walk encoder embedding space along PCA directions, then decode."""
 
     name = "embedding_walk_encoder"
+    models_needed = frozenset(["main", "encoder"])
 
     def generate_msa(
         self,

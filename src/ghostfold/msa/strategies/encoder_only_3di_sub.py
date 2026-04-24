@@ -9,8 +9,13 @@ from ghostfold.msa.strategies.threedipperturb import _mutate_3di
 from .base import BaseStrategy
 
 _3DI_ALPHABET = "acdefghiklmnpqrstvwy"
+_AA_ALPHABET = "ACDEFGHIKLMNPQRSTVWY"
+
 _CNN_URL = "https://github.com/mheinzinger/ProstT5/raw/main/cnn_chkpnt/model.pt"
 _CNN_CACHE = Path.home() / ".cache" / "ghostfold" / "cnn_3di.pt"
+
+_CNN_AA_URL = "https://github.com/mheinzinger/ProstT5/raw/main/cnn_chkpnt_AA_CNN/model.pt"
+_CNN_AA_CACHE = Path.home() / ".cache" / "ghostfold" / "cnn_aa.pt"
 
 
 class _CNN(nn.Module):
@@ -39,6 +44,18 @@ def load_cnn_3di(device: torch.device) -> _CNN:
     return model.eval().to(device)
 
 
+def load_cnn_aa(device: torch.device) -> _CNN:
+    """Load the CNN that predicts AA directly from T5 encoder embeddings of 3Di input."""
+    _CNN_AA_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    if not _CNN_AA_CACHE.exists():
+        from urllib import request
+        request.urlretrieve(_CNN_AA_URL, _CNN_AA_CACHE)
+    state = torch.load(_CNN_AA_CACHE, map_location=device)
+    model = _CNN()
+    model.load_state_dict(state["state_dict"])
+    return model.eval().to(device)
+
+
 def _predict_3di_encoder(
     query_seq: str,
     encoder_model,
@@ -48,7 +65,7 @@ def _predict_3di_encoder(
 ) -> str:
     prefix = "<AA2fold>"
     seq_input = prefix + " " + " ".join(list(query_seq))
-    encoding = tokenizer.batch_encode_plus(
+    encoding = tokenizer(
         [seq_input], add_special_tokens=True, padding="longest", return_tensors="pt"
     ).to(device)
     with torch.no_grad():
@@ -67,6 +84,7 @@ class EncoderOnly3DiSubStrategy(BaseStrategy):
     """Deterministic encoder-only 3Di → sub matrix variants → full decoder AA."""
 
     name = "encoder_only_3di_sub"
+    models_needed = frozenset(["main", "encoder", "cnn_3di"])
 
     def generate_msa(
         self,
