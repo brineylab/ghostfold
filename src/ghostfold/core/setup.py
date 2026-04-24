@@ -7,6 +7,10 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from transformers import AutoModelForSeq2SeqLM, T5Tokenizer
+
+_PROSTT5_MODEL = "Rostlab/ProstT5"
+
 _PIXI_HOME = Path.home()
 _PIXI_BIN = Path.home() / ".pixi" / "bin" / "pixi"
 _PIXI_INSTALLER_URL = "https://pixi.prefix.dev/install.sh"
@@ -146,4 +150,25 @@ def ensure_af2_weights(colabfold_dir: Path) -> None:
         raise GhostFoldSetupError(
             f"AF2 weight download failed (exit {exc.returncode}).\n"
             "Re-run `ghostfold setup` to resume (download is resumable)."
+        ) from exc
+
+
+def ensure_prostt5(hf_token: str | None = None) -> None:
+    """Pre-download ProstT5 into HuggingFace cache (CPU only)."""
+    try:
+        T5Tokenizer.from_pretrained(
+            _PROSTT5_MODEL,
+            do_lower_case=False,
+            legacy=True,
+            token=hf_token,
+        )
+        AutoModelForSeq2SeqLM.from_pretrained(
+            _PROSTT5_MODEL,
+            device_map="cpu",
+            token=hf_token,
+        )
+    except Exception as exc:
+        raise GhostFoldSetupError(
+            f"ProstT5 download failed: {exc}\n"
+            "Run `huggingface-cli login` or pass `--hf-token TOKEN` to `ghostfold setup`."
         ) from exc

@@ -142,3 +142,64 @@ class TestEnsureAf2Weights:
         ensure_af2_weights(local_dir)
 
         assert any("colabfold.download" in str(c) for c in run_calls)
+
+
+class TestEnsureProstt5:
+    def test_calls_from_pretrained_with_no_token(self, monkeypatch):
+        tokenizer_calls = []
+        model_calls = []
+
+        class FakeTokenizer:
+            @classmethod
+            def from_pretrained(cls, name, **kwargs):
+                tokenizer_calls.append((name, kwargs))
+                return cls()
+
+        class FakeModel:
+            @classmethod
+            def from_pretrained(cls, name, **kwargs):
+                model_calls.append((name, kwargs))
+                return cls()
+
+        monkeypatch.setattr("ghostfold.core.setup.T5Tokenizer", FakeTokenizer)
+        monkeypatch.setattr("ghostfold.core.setup.AutoModelForSeq2SeqLM", FakeModel)
+
+        from ghostfold.core.setup import ensure_prostt5
+        ensure_prostt5(hf_token=None)
+
+        assert tokenizer_calls[0][0] == "Rostlab/ProstT5"
+        assert model_calls[0][1].get("device_map") == "cpu"
+
+    def test_passes_hf_token_when_provided(self, monkeypatch):
+        model_calls = []
+
+        class FakeTokenizer:
+            @classmethod
+            def from_pretrained(cls, name, **kwargs):
+                return cls()
+
+        class FakeModel:
+            @classmethod
+            def from_pretrained(cls, name, **kwargs):
+                model_calls.append(kwargs)
+                return cls()
+
+        monkeypatch.setattr("ghostfold.core.setup.T5Tokenizer", FakeTokenizer)
+        monkeypatch.setattr("ghostfold.core.setup.AutoModelForSeq2SeqLM", FakeModel)
+
+        from ghostfold.core.setup import ensure_prostt5
+        ensure_prostt5(hf_token="my-token")
+
+        assert model_calls[0].get("token") == "my-token"
+
+    def test_raises_setup_error_on_hf_failure(self, monkeypatch):
+        class FakeTokenizer:
+            @classmethod
+            def from_pretrained(cls, name, **kwargs):
+                raise OSError("401 Unauthorized")
+
+        monkeypatch.setattr("ghostfold.core.setup.T5Tokenizer", FakeTokenizer)
+
+        from ghostfold.core.setup import ensure_prostt5, GhostFoldSetupError
+        with pytest.raises(GhostFoldSetupError, match="ProstT5"):
+            ensure_prostt5(hf_token=None)
