@@ -54,18 +54,16 @@ DEFAULT_MAX_EXTRA_SEQ = [64]
 
 
 def _detect_multimer_from_a3m(a3m_file: str) -> bool:
-    """Return True if the first sequence in an A3M file contains ':' (multimer query)."""
+    """Return True if the A3M file is a paired multimer MSA.
+
+    ColabFold paired MSA format starts with a '#lengths\\tcardinalities' line,
+    e.g. '#142,142\\t1,1'. The query sequence has ':' stripped, so we detect
+    multimers from the '#' header, not from ':' in the sequence.
+    """
     try:
         with open(a3m_file) as fh:
-            in_first_record = False
-            for line in fh:
-                line = line.rstrip()
-                if line.startswith(">"):
-                    if in_first_record:
-                        break
-                    in_first_record = True
-                elif in_first_record and line:
-                    return ":" in line
+            first_line = fh.readline().rstrip()
+            return first_line.startswith("#")
     except OSError:
         pass
     return False
@@ -232,7 +230,8 @@ def run_colabfold(
         raise FileNotFoundError(f"MSA directory not found at '{msa_root_dir}'")
 
     original_a3m_files = sorted(
-        glob.glob(os.path.join(msa_root_dir, "*", "pstMSA.a3m"))
+        os.path.abspath(p)
+        for p in glob.glob(os.path.join(msa_root_dir, "*", "pstMSA.a3m"))
     )
     if not original_a3m_files:
         logger.warning(f"No 'pstMSA.a3m' files found in '{msa_root_dir}'.")
@@ -315,7 +314,7 @@ def run_colabfold(
                     futures = []
                     for j, msa_file in enumerate(a3m_files_to_process):
                         output_folder_name = os.path.basename(os.path.dirname(msa_file))
-                        current_pred_dir = os.path.join(preds_dir, output_folder_name)
+                        current_pred_dir = os.path.abspath(os.path.join(preds_dir, output_folder_name))
                         os.makedirs(current_pred_dir, exist_ok=True)
                         gpu_id = j % num_gpus
 

@@ -58,6 +58,7 @@ def _format_setup_error(
         ),
         "This setup is required for `ghostfold run` and `ghostfold fold`.",
         "Or run `ghostfold setup` to install everything automatically.",
+        "If setup previously ran but something broke, use `ghostfold setup --force` to reinstall (weights are reused).",
     ]
     if include_pixi_hint:
         lines.append(f"Pixi installation instructions: {PIXI_INSTALL_URL}")

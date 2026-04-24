@@ -21,6 +21,7 @@ dependencies = [
     "tiktoken>=0.5",
     "torch>=2.0",
     "transformers>=4.30",
+    "accelerate",
     "typer>=0.12",
 ]
 classifiers = [

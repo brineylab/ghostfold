@@ -29,22 +29,33 @@ def setup(
         help="HuggingFace access token for ProstT5 (alternative to huggingface-cli login).",
         envvar="HF_TOKEN",
     ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Force reinstall of ColabFold env and libraries. AF2 and ProstT5 weights are reused if already present.",
+    ),
 ) -> None:
-    """Bootstrap pixi, install ColabFold, download AF2 weights, and cache ProstT5."""
+    """Install ColabFold, download AF2 weights, and cache ProstT5."""
     console = get_console()
     console.print(f"[bold]GhostFold Setup[/bold] — installing to [cyan]{colabfold_dir.resolve()}[/cyan]")
     if skip_weights:
         console.print("[dim]  --skip-weights: AF2 weight download skipped[/dim]")
+    if force:
+        console.print("[dim]  --force: ColabFold env will be removed and reinstalled (weights reused)[/dim]")
 
     try:
-        run_setup(
+        mamba_fresh = run_setup(
             colabfold_dir=colabfold_dir,
             skip_weights=skip_weights,
             hf_token=hf_token,
+            force=force,
         )
     except GhostFoldSetupError as exc:
         typer.secho(f"\nSetup failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1)
 
     console.print("\n[green]Setup complete.[/green] Run: [bold]ghostfold run --help[/bold]")
-    console.print("[dim]  Add ~/.pixi/bin to ~/.bashrc if pixi was freshly installed.[/dim]")
+    console.print("[dim]  Tip: use [bold]--force[/bold] to reinstall libraries if something breaks (weights reused).[/dim]")
+    console.print("[dim]  Tip: use [bold]--skip-weights[/bold] to skip AF2 weight download.[/dim]")
+    if mamba_fresh:
+        console.print("[dim]  micromamba installed to ~/micromamba/bin — add it to PATH or open a new terminal.[/dim]")

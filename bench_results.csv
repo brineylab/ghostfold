@@ -1,0 +1,3 @@
+precision,load_time_s,gen_time_s,peak_vram_gb,raw_seqs,filtered_seqs,filter_rate,neff
+bf16,2.783,26.666,7.671,151,120,0.7945,3.0006
+fp16,2.4895,27.3965,9.171,151,122.5,0.811,2.7787

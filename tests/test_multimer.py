@@ -24,19 +24,30 @@ _typer_missing = _runner is None
 # ---------------------------------------------------------------------------
 
 class TestDetectMultimerFromA3m:
-    def _write_a3m(self, tmp_path: str, query_seq: str) -> str:
-        path = os.path.join(tmp_path, "pstMSA.a3m")
+    def _write_paired_a3m(self, tmp_path, chain_lengths, query_seq) -> str:
+        """Write a ColabFold paired multimer MSA (starts with #lengths\\tcardinalities)."""
+        path = os.path.join(str(tmp_path), "pstMSA.a3m")
+        lengths_str = ",".join(str(n) for n in chain_lengths)
+        cardinality_str = ",".join("1" for _ in chain_lengths)
+        chain_header = "\t".join(str(i + 1) for i in range(len(chain_lengths)))
+        with open(path, "w") as f:
+            f.write(f"#{lengths_str}\t{cardinality_str}\n")
+            f.write(f">{chain_header}\n{query_seq}\n")
+        return path
+
+    def _write_monomer_a3m(self, tmp_path, query_seq) -> str:
+        path = os.path.join(str(tmp_path), "pstMSA.a3m")
         with open(path, "w") as f:
             f.write(f">query\n{query_seq}\n")
             f.write(">seq1\nAAAA\n")
         return path
 
-    def test_detects_multimer_with_colon(self, tmp_path):
-        path = self._write_a3m(str(tmp_path), "AAAA:BBBB")
+    def test_detects_paired_multimer_hash_header(self, tmp_path):
+        path = self._write_paired_a3m(tmp_path, [4, 4], "AAAABBBB")
         assert _detect_multimer_from_a3m(path) is True
 
     def test_monomer_returns_false(self, tmp_path):
-        path = self._write_a3m(str(tmp_path), "AAAABBBB")
+        path = self._write_monomer_a3m(tmp_path, "AAAABBBB")
         assert _detect_multimer_from_a3m(path) is False
 
     def test_missing_file_returns_false(self):
@@ -47,17 +58,11 @@ class TestDetectMultimerFromA3m:
         open(path, "w").close()
         assert _detect_multimer_from_a3m(path) is False
 
-    def test_only_header_returns_false(self, tmp_path):
-        path = str(tmp_path / "header_only.a3m")
-        with open(path, "w") as f:
-            f.write(">query\n")
-        assert _detect_multimer_from_a3m(path) is False
-
-    def test_colon_only_in_second_record_returns_false(self, tmp_path):
+    def test_hash_only_in_second_line_returns_false(self, tmp_path):
         path = str(tmp_path / "second.a3m")
         with open(path, "w") as f:
             f.write(">query\nAAAABBBB\n")
-            f.write(">other\nAAA:BBB\n")
+            f.write("#4,4\t1,1\n")
         assert _detect_multimer_from_a3m(path) is False
 
 
@@ -140,8 +145,52 @@ class TestWriteMultimerPstMsa:
         )
         with open(path) as f:
             content = f.read()
-        # Only query record present (# header line is not a fasta record)
-        assert content.count(">") == 1
+        # query record + 2 chain query records (always written for unpaired_msa)
+        assert content.count(">") == 3
+
+    def test_homooligomer_uses_hash_L_N_format(self, tmp_path):
+        path = str(tmp_path / "pstMSA.fasta")
+        write_multimer_pst_msa(
+            output_path=path,
+            query_seq="AAAA:AAAA",
+            concat_seqs=["AAAAAAAA", "AAACAAAC"],
+            per_chain_seqs=[["AAAC"], ["AAAC"]],
+            chain_lengths=[4, 4],
+        )
+        with open(path) as f:
+            lines = f.readlines()
+        # First line: #L\tN format
+        assert lines[0].strip() == "#4\t2"
+        # Query is single-chain only
+        assert lines[1].strip() == ">query"
+        assert lines[2].strip() == "AAAA"
+
+    def test_homooligomer_concat_split_to_first_chain(self, tmp_path):
+        path = str(tmp_path / "pstMSA.fasta")
+        write_multimer_pst_msa(
+            output_path=path,
+            query_seq="AAAA:AAAA",
+            concat_seqs=["AAAABBBB"],  # first 4 = AAAA, second 4 = BBBB
+            per_chain_seqs=[[], []],
+            chain_lengths=[4, 4],
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "AAAA" in content   # first-chain portion of concat
+        assert "BBBB" not in content  # second-chain portion discarded
+
+    def test_heterooligomer_uses_comma_format(self, tmp_path):
+        path = str(tmp_path / "pstMSA.fasta")
+        write_multimer_pst_msa(
+            output_path=path,
+            query_seq="AAAA:BBBB",
+            concat_seqs=["AAAABBBB"],
+            per_chain_seqs=[[], []],
+            chain_lengths=[4, 4],
+        )
+        with open(path) as f:
+            lines = f.readlines()
+        assert lines[0].strip() == "#4,4\t1,1"
 
     def test_total_row_length_equals_concat_length(self, tmp_path):
         path = str(tmp_path / "pstMSA.fasta")

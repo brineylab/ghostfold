@@ -152,6 +152,15 @@ def run_parallel_msa(
     if num_seqs == 1:
         logger.info("Only one sequence found. Running on a single GPU.")
         _msa_worker(0, project_name, fasta_path, config_path, log_file_path or "", recursive=recursive, precision=precision, multimer_msa_mode=multimer_msa_mode)
+        # Free ProstT5 from VRAM so ColabFold (launched next) isn't starved.
+        try:
+            import torch
+            from ghostfold.core.pipeline import _MODEL_CACHE
+            _MODEL_CACHE.clear()
+            torch.cuda.empty_cache()
+            logger.info("ProstT5 model freed from VRAM.")
+        except Exception:
+            pass
     else:
         temp_dir = Path(tempfile.mkdtemp(prefix="ghostfold_splits_"))
         logger.info(f"Splitting FASTA file into temporary directory: {temp_dir}")
