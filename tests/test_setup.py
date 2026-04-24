@@ -203,3 +203,33 @@ class TestEnsureProstt5:
         from ghostfold.core.setup import ensure_prostt5, GhostFoldSetupError
         with pytest.raises(GhostFoldSetupError, match="ProstT5"):
             ensure_prostt5(hf_token=None)
+
+
+class TestRunSetup:
+    def test_calls_all_steps_in_order(self, monkeypatch, tmp_path):
+        call_order = []
+
+        monkeypatch.setattr("ghostfold.core.setup.ensure_pixi", lambda: call_order.append("pixi") or "/usr/bin/pixi")
+        monkeypatch.setattr("ghostfold.core.setup.ensure_colabfold_env", lambda d: call_order.append("colabfold"))
+        monkeypatch.setattr("ghostfold.core.setup.ensure_af2_weights", lambda d: call_order.append("weights"))
+        monkeypatch.setattr("ghostfold.core.setup.ensure_prostt5", lambda hf_token=None: call_order.append("prostt5"))
+
+        from ghostfold.core.setup import run_setup
+        run_setup(colabfold_dir=tmp_path / "localcolabfold", skip_weights=False, hf_token=None)
+
+        assert call_order == ["pixi", "colabfold", "weights", "prostt5"]
+
+    def test_skips_weights_when_flag_set(self, monkeypatch, tmp_path):
+        call_order = []
+
+        monkeypatch.setattr("ghostfold.core.setup.ensure_pixi", lambda: call_order.append("pixi") or "/usr/bin/pixi")
+        monkeypatch.setattr("ghostfold.core.setup.ensure_colabfold_env", lambda d: call_order.append("colabfold"))
+        monkeypatch.setattr("ghostfold.core.setup.ensure_af2_weights", lambda d: call_order.append("weights"))
+        monkeypatch.setattr("ghostfold.core.setup.ensure_prostt5", lambda hf_token=None: call_order.append("prostt5"))
+
+        from ghostfold.core.setup import run_setup
+        run_setup(colabfold_dir=tmp_path / "localcolabfold", skip_weights=True, hf_token=None)
+
+        assert "weights" not in call_order
+        assert "pixi" in call_order
+        assert "prostt5" in call_order

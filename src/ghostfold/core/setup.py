@@ -172,3 +172,18 @@ def ensure_prostt5(hf_token: str | None = None) -> None:
             f"ProstT5 download failed: {exc}\n"
             "Run `huggingface-cli login` or pass `--hf-token TOKEN` to `ghostfold setup`."
         ) from exc
+
+
+def run_setup(
+    colabfold_dir: Path,
+    skip_weights: bool = False,
+    hf_token: str | None = None,
+) -> None:
+    """Run all setup steps in order. Each step is idempotent."""
+    colabfold_dir = Path(colabfold_dir).resolve()
+
+    ensure_pixi()
+    ensure_colabfold_env(colabfold_dir)
+    if not skip_weights:
+        ensure_af2_weights(colabfold_dir)
+    ensure_prostt5(hf_token=hf_token)
