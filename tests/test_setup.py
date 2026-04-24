@@ -47,3 +47,52 @@ class TestEnsurePixi:
         from ghostfold.core.setup import ensure_pixi, GhostFoldSetupError
         with pytest.raises(GhostFoldSetupError, match="pixi"):
             ensure_pixi()
+
+
+class TestEnsureColabfoldEnv:
+    def test_skips_when_env_already_valid(self, monkeypatch, tmp_path):
+        local_dir = tmp_path / "localcolabfold"
+        local_dir.mkdir()
+        (local_dir / "pixi.toml").write_text("[project]\nname='colabfold'\n")
+
+        run_calls = []
+        def fake_run(cmd, **kwargs):
+            run_calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0)
+
+        monkeypatch.setattr("ghostfold.core.setup.subprocess.run", fake_run)
+        from ghostfold.core.setup import ensure_colabfold_env
+        ensure_colabfold_env(local_dir)
+
+        assert any("colabfold_batch" in str(c) for c in run_calls)
+        assert not any("install" in str(c) for c in run_calls)
+
+    def test_creates_pixi_toml_and_installs_when_missing(self, monkeypatch, tmp_path):
+        local_dir = tmp_path / "localcolabfold"
+        local_dir.mkdir()
+
+        run_calls = []
+        def fake_run(cmd, **kwargs):
+            run_calls.append(cmd)
+            if "colabfold_batch" in str(cmd):
+                raise subprocess.CalledProcessError(1, cmd)
+            return subprocess.CompletedProcess(cmd, 0)
+
+        monkeypatch.setattr("ghostfold.core.setup.subprocess.run", fake_run)
+        from ghostfold.core.setup import ensure_colabfold_env
+        ensure_colabfold_env(local_dir)
+
+        assert (local_dir / "pixi.toml").exists()
+        assert any("install" in str(c) for c in run_calls)
+
+    def test_raises_on_pixi_install_failure(self, monkeypatch, tmp_path):
+        local_dir = tmp_path / "localcolabfold"
+        local_dir.mkdir()
+
+        def fake_run(cmd, **kwargs):
+            raise subprocess.CalledProcessError(1, cmd)
+
+        monkeypatch.setattr("ghostfold.core.setup.subprocess.run", fake_run)
+        from ghostfold.core.setup import ensure_colabfold_env, GhostFoldSetupError
+        with pytest.raises(GhostFoldSetupError, match="ColabFold"):
+            ensure_colabfold_env(local_dir)

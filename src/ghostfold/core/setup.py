@@ -90,3 +90,38 @@ def ensure_pixi() -> str:
             f'  export PATH="{bin_dir}:$PATH"'
         )
     return path
+
+
+def ensure_colabfold_env(colabfold_dir: Path) -> None:
+    """Create pixi ColabFold env in colabfold_dir if not already valid."""
+    colabfold_dir = Path(colabfold_dir)
+    colabfold_dir.mkdir(parents=True, exist_ok=True)
+
+    pixi_toml = colabfold_dir / "pixi.toml"
+
+    if pixi_toml.exists():
+        try:
+            subprocess.run(
+                ["pixi", "run", "colabfold_batch", "--help"],
+                cwd=str(colabfold_dir),
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return
+        except subprocess.CalledProcessError:
+            pass
+
+    pixi_toml.write_text(COLABFOLD_PIXI_TOML)
+
+    try:
+        subprocess.run(
+            ["pixi", "install"],
+            cwd=str(colabfold_dir),
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise GhostFoldSetupError(
+            f"ColabFold environment creation failed (exit {exc.returncode}).\n"
+            "Check: CUDA 12.x is available and you have ~10 GB free disk space."
+        ) from exc
