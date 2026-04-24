@@ -6,7 +6,6 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Optional
 
 _PIXI_HOME = Path.home()
 _PIXI_BIN = Path.home() / ".pixi" / "bin" / "pixi"

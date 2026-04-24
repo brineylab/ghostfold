@@ -1,7 +1,5 @@
 import shutil
 import subprocess
-from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 import pytest
 
@@ -37,12 +35,10 @@ class TestEnsurePixi:
         monkeypatch.setattr(shutil, "which", fake_which)
         monkeypatch.setattr("ghostfold.core.setup.subprocess.run", fake_run)
         monkeypatch.setattr("ghostfold.core.setup._PIXI_HOME", tmp_path)
+        monkeypatch.setattr("ghostfold.core.setup._PIXI_BIN", pixi_bin)
 
-        from ghostfold.core import setup as setup_mod
-        import importlib
-        importlib.reload(setup_mod)
-
-        result = setup_mod.ensure_pixi()
+        from ghostfold.core.setup import ensure_pixi
+        result = ensure_pixi()
         assert result == str(pixi_bin)
         assert any("pixi" in str(c) for c in run_calls)
 
