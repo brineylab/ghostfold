@@ -17,7 +17,7 @@ Add `benchmarks/bench_pseudomsa_low_neff.py`.
 Example:
 
 ```bash
-python benchmarks/bench_pseudomsa_low_neff.py \
+uv run python3 benchmarks/bench_pseudomsa_low_neff.py \
   --bench-dir bench \
   --out-dir bench_low_neff \
   --proteins 6LF2_B \
