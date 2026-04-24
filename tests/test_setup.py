@@ -96,3 +96,49 @@ class TestEnsureColabfoldEnv:
         from ghostfold.core.setup import ensure_colabfold_env, GhostFoldSetupError
         with pytest.raises(GhostFoldSetupError, match="ColabFold"):
             ensure_colabfold_env(local_dir)
+
+
+class TestEnsureAf2Weights:
+    def test_skips_when_params_dir_populated(self, monkeypatch, tmp_path):
+        local_dir = tmp_path / "localcolabfold"
+        params_dir = local_dir / "colabfold" / "params"
+        params_dir.mkdir(parents=True)
+        (params_dir / "params_model_1.npz").touch()
+
+        run_calls = []
+        monkeypatch.setattr("ghostfold.core.setup.subprocess.run", lambda cmd, **kw: run_calls.append(cmd) or subprocess.CompletedProcess(cmd, 0))
+
+        from ghostfold.core.setup import ensure_af2_weights
+        ensure_af2_weights(local_dir)
+        assert run_calls == []
+
+    def test_downloads_when_params_dir_missing(self, monkeypatch, tmp_path):
+        local_dir = tmp_path / "localcolabfold"
+        local_dir.mkdir()
+
+        run_calls = []
+        def fake_run(cmd, **kwargs):
+            run_calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0)
+
+        monkeypatch.setattr("ghostfold.core.setup.subprocess.run", fake_run)
+        from ghostfold.core.setup import ensure_af2_weights
+        ensure_af2_weights(local_dir)
+
+        assert any("colabfold.download" in str(c) for c in run_calls)
+
+    def test_downloads_when_params_dir_empty(self, monkeypatch, tmp_path):
+        local_dir = tmp_path / "localcolabfold"
+        params_dir = local_dir / "colabfold" / "params"
+        params_dir.mkdir(parents=True)
+
+        run_calls = []
+        def fake_run(cmd, **kwargs):
+            run_calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0)
+
+        monkeypatch.setattr("ghostfold.core.setup.subprocess.run", fake_run)
+        from ghostfold.core.setup import ensure_af2_weights
+        ensure_af2_weights(local_dir)
+
+        assert any("colabfold.download" in str(c) for c in run_calls)

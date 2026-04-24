@@ -125,3 +125,25 @@ def ensure_colabfold_env(colabfold_dir: Path) -> None:
             f"ColabFold environment creation failed (exit {exc.returncode}).\n"
             "Check: CUDA 12.x is available and you have ~10 GB free disk space."
         ) from exc
+
+
+def ensure_af2_weights(colabfold_dir: Path) -> None:
+    """Download AF2 weights into colabfold_dir if not already present."""
+    colabfold_dir = Path(colabfold_dir)
+    params_dir = colabfold_dir / "colabfold" / "params"
+
+    if params_dir.exists() and any(params_dir.iterdir()):
+        return
+
+    try:
+        subprocess.run(
+            ["pixi", "run", "python", "-m", "colabfold.download"],
+            cwd=str(colabfold_dir),
+            check=True,
+            env={**os.environ, "XDG_CACHE_HOME": str(colabfold_dir), "MPLBACKEND": "Agg"},
+        )
+    except subprocess.CalledProcessError as exc:
+        raise GhostFoldSetupError(
+            f"AF2 weight download failed (exit {exc.returncode}).\n"
+            "Re-run `ghostfold setup` to resume (download is resumable)."
+        ) from exc
