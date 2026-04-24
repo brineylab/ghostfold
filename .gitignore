@@ -216,3 +216,4 @@ localcolabfold/
 docs/
 preds/*
 AUDIT.md
+.worktrees/
