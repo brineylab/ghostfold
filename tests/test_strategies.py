@@ -313,7 +313,7 @@ class TestEncoderOnly3DiSubStrategy:
     def test_mutation_produces_variants(self, mock_gen_aa):
         mock_gen_aa.return_value = [QUERY]
         import torch
-        from ghostfold.msa.strategies.encoder_only_3di_sub import EncoderOnly3DiSubStrategy, _predict_3di_encoder
+        from ghostfold.msa.strategies.encoder_only_3di_sub import _predict_3di_encoder
 
         mock_cnn = MagicMock()
         L = len(QUERY)

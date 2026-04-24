@@ -363,7 +363,6 @@ def run_benchmark(
                 pending.append((row, a3m_path, run_dir, ref_pdb))
                 _save_csv(out_dir / "results.csv", results)
 
-                done = sum(1 for r in results)
                 progress.update(
                     overall,
                     advance=1,

@@ -3,8 +3,6 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 
 def _make_bench_dir(tmp_path: Path) -> Path:
     fasta_dir = tmp_path / "fasta"
