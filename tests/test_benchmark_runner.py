@@ -52,3 +52,35 @@ class TestRunnerDiscovery:
         from ghostfold.benchmark.runner import _find_ref_pdb
         pdb = _find_ref_pdb(bench_dir, "2XYZ")  # no pdb for 2XYZ
         assert pdb is None
+
+
+class TestEncoderModelArg:
+    def test_generate_msa_receives_encoder_model(self, tmp_path):
+        """Strategy.generate_msa must be called with encoder_model kwarg."""
+        bench_dir = _make_bench_dir(tmp_path)
+
+        from ghostfold.msa.strategies.base import BaseStrategy
+
+        class CapturingStrategy(BaseStrategy):
+            name = "capturing"
+            received_config = {}
+
+            def generate_msa(self, query_seq, model, tokenizer, device, config):
+                CapturingStrategy.received_config = config
+                return []
+
+        with patch("ghostfold.benchmark.runner.STRATEGIES", {"capturing": CapturingStrategy}):
+            from ghostfold.benchmark.runner import run_benchmark
+            import torch
+            run_benchmark(
+                bench_dir=bench_dir,
+                out_dir=tmp_path / "out",
+                strategy_names=["capturing"],
+                strategy_configs={"capturing": {}},
+                model=MagicMock(),
+                tokenizer=MagicMock(),
+                device=torch.device("cpu"),
+                encoder_model=None,
+                run_colabfold=False,
+            )
+        assert "encoder_model" in CapturingStrategy.received_config

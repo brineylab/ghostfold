@@ -290,6 +290,8 @@ def run_benchmark(
     model: Any,
     tokenizer: Any,
     device: torch.device,
+    encoder_model: Any | None = None,
+    cnn_3di: Any | None = None,
     protein_ids: list[str] | None = None,
     run_colabfold: bool = False,
     colabfold_gpus: int = 1,
@@ -339,7 +341,9 @@ def run_benchmark(
                     continue
 
                 strategy = cls()
-                cfg = strategy_configs.get(name, {})
+                cfg = dict(strategy_configs.get(name, {}))
+                cfg["encoder_model"] = encoder_model
+                cfg["cnn_3di"] = cnn_3di
 
                 row, a3m_path = _generate_msa(
                     protein_id=pid,
