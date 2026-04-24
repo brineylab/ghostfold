@@ -1,6 +1,7 @@
 """Tests for MSA generation strategies (all GPU-free via mock model)."""
 from unittest.mock import MagicMock, patch
 
+import pytest
 import torch
 
 from ghostfold.msa.strategies import STRATEGIES, BaseStrategy
@@ -378,3 +379,89 @@ class TestTemperatureSweepStrategy:
         _, call_kwargs = mock_aa.call_args
         passed_conf = call_kwargs.get("decode_conf", mock_aa.call_args[0][5] if len(mock_aa.call_args[0]) > 5 else {})
         assert passed_conf.get("repetition_penalty") == _DEFAULT_REPETITION_PENALTY
+
+
+# ---------------------------------------------------------------------------
+# EmbeddingWalkFullStrategy
+# ---------------------------------------------------------------------------
+
+class TestEmbeddingWalkFullStrategy:
+    @patch("ghostfold.msa.strategies.embedding_walk_full.generate_aa")
+    def test_returns_list(self, mock_gen_aa):
+        mock_gen_aa.return_value = [QUERY]
+        from ghostfold.msa.strategies.embedding_walk_full import EmbeddingWalkFullStrategy
+
+        model = _mock_model(QUERY)
+        block = MagicMock()
+        block.return_value = (torch.randn(1, len(QUERY), 64),)
+        model.encoder.block = [block, block]
+
+        strat = EmbeddingWalkFullStrategy()
+        result = strat.generate_msa(
+            QUERY,
+            model,
+            _mock_tokenizer(),
+            torch.device("cpu"),
+            {"noise_scales": [0.1], "num_return_sequences": 1, "decode_conf": {}},
+        )
+        assert isinstance(result, list)
+
+    @patch("ghostfold.msa.strategies.embedding_walk_full.generate_aa")
+    def test_one_decode_per_noise_scale(self, mock_gen_aa):
+        mock_gen_aa.return_value = [QUERY]
+        from ghostfold.msa.strategies.embedding_walk_full import EmbeddingWalkFullStrategy
+
+        model = _mock_model(QUERY)
+        block = MagicMock()
+        block.return_value = (torch.randn(1, len(QUERY), 64),)
+        model.encoder.block = [block]
+
+        strat = EmbeddingWalkFullStrategy()
+        strat.generate_msa(
+            QUERY,
+            model,
+            _mock_tokenizer(),
+            torch.device("cpu"),
+            {"noise_scales": [0.1, 0.3, 0.5], "num_return_sequences": 2, "decode_conf": {}},
+        )
+        assert model.generate.call_count == 3
+
+
+class TestEmbeddingWalkEncoderStrategy:
+    @patch("ghostfold.msa.strategies.embedding_walk_encoder.generate_aa")
+    def test_returns_list(self, mock_gen_aa):
+        mock_gen_aa.return_value = [QUERY]
+        import torch
+        from ghostfold.msa.strategies.embedding_walk_encoder import EmbeddingWalkEncoderStrategy
+
+        L = len(QUERY)
+        mock_enc = MagicMock()
+        enc_out = MagicMock()
+        enc_out.last_hidden_state = torch.randn(1, L, 64)
+        mock_enc.return_value = enc_out
+
+        strat = EmbeddingWalkEncoderStrategy()
+        result = strat.generate_msa(
+            QUERY,
+            _mock_model(QUERY),
+            _mock_tokenizer(),
+            torch.device("cpu"),
+            {
+                "encoder_model": mock_enc,
+                "n_pca_components": 2,
+                "step_sizes": [-1.0, 1.0],
+                "n_noise_samples": 5,
+                "noise_sigma": 0.1,
+                "num_return_sequences": 1,
+                "decode_conf": {},
+            },
+        )
+        assert isinstance(result, list)
+
+    @patch("ghostfold.msa.strategies.embedding_walk_encoder.generate_aa")
+    def test_raises_without_encoder_model(self, mock_gen_aa):
+        import torch
+        from ghostfold.msa.strategies.embedding_walk_encoder import EmbeddingWalkEncoderStrategy
+        strat = EmbeddingWalkEncoderStrategy()
+        with pytest.raises(ValueError, match="encoder_model"):
+            strat.generate_msa(QUERY, _mock_model(QUERY), _mock_tokenizer(), torch.device("cpu"), {})
