@@ -57,6 +57,7 @@ def _format_setup_error(
             f"`{_install_command(localcolabfold_dir)}` from the GhostFold repository root."
         ),
         "This setup is required for `ghostfold run` and `ghostfold fold`.",
+        "Or run `ghostfold setup` to install everything automatically.",
     ]
     if include_pixi_hint:
         lines.append(f"Pixi installation instructions: {PIXI_INSTALL_URL}")

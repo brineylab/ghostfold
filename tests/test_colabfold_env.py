@@ -136,6 +136,17 @@ def test_ensure_colabfold_ready_falls_back_to_micromamba(monkeypatch, tmp_path):
     ]
 
 
+def test_setup_error_includes_ghostfold_setup_hint(monkeypatch, tmp_path):
+    """ColabFoldSetupError message should suggest running ghostfold setup."""
+    local_dir = tmp_path / "no_colabfold"
+    local_dir.mkdir()
+
+    monkeypatch.setattr("ghostfold.core.colabfold_env.shutil.which", lambda cmd: None)
+
+    with pytest.raises(ColabFoldSetupError, match="ghostfold setup"):
+        ensure_colabfold_ready(localcolabfold_dir=local_dir)
+
+
 def test_ensure_colabfold_ready_total_failure(monkeypatch):
     monkeypatch.setattr("ghostfold.core.colabfold_env.shutil.which", lambda _cmd: None)
 
