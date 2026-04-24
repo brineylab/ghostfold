@@ -40,6 +40,22 @@ _CSV_FIELDS = [
 ]
 
 
+def _discover_proteins(bench_dir: Path) -> list[tuple[str, str]]:
+    from ghostfold.io.fasta import read_fasta_from_path
+    fasta_dir = bench_dir / "fasta"
+    proteins: list[tuple[str, str]] = []
+    for fasta_path in sorted(fasta_dir.glob("*.fasta")):
+        records = list(read_fasta_from_path(fasta_path))
+        if records:
+            proteins.append((fasta_path.stem, str(records[0].seq)))
+    return proteins
+
+
+def _find_ref_pdb(bench_dir: Path, protein_id: str) -> Path | None:
+    pdb = bench_dir / "pdb" / f"{protein_id}.pdb"
+    return pdb if pdb.exists() else None
+
+
 def _write_a3m(path: Path, query_id: str, query_seq: str, sequences: list[str]) -> None:
     with open(path, "w") as fh:
         fh.write(f">{query_id}\n{query_seq}\n")
@@ -285,15 +301,11 @@ def run_benchmark(
              *target_n_sequences* for a fair cross-strategy comparison.
     Phase 2: If run_colabfold, fold all MSAs in a single ColabFold invocation.
     """
-    from ghostfold.io.fasta import read_fasta_from_path
-
     out_dir.mkdir(parents=True, exist_ok=True)
-    records = list(read_fasta_from_path(bench_dir / "queries.fasta"))
-
     proteins = [
-        (r.id, str(r.seq))
-        for r in records
-        if protein_ids is None or r.id in protein_ids
+        (pid, seq)
+        for pid, seq in _discover_proteins(bench_dir)
+        if protein_ids is None or pid in protein_ids
     ]
     total_jobs = len(proteins) * len(strategy_names)
 
@@ -317,8 +329,7 @@ def run_benchmark(
         detail = progress.add_task("", total=1)
 
         for pid, query_seq in proteins:
-            ref_pdb = bench_dir / f"{pid}.pdb"
-            ref_pdb = ref_pdb if ref_pdb.exists() else None
+            ref_pdb = _find_ref_pdb(bench_dir, pid)
 
             for name in strategy_names:
                 cls = STRATEGIES.get(name)
