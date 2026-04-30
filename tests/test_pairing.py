@@ -1,5 +1,8 @@
-import pytest
+import pathlib
+import tempfile
 from unittest.mock import patch
+
+from ghostfold.core.pipeline import write_multimer_pst_msa
 from ghostfold.msa.pairing import _reservoir_sample_product, build_paired_msa
 
 
@@ -59,17 +62,17 @@ def test_dedup_applied():
     assert result.count("AAAAXXXX") == 1
 
 
+def test_build_paired_msa_importable_from_package():
+    from ghostfold import build_paired_msa
+    assert callable(build_paired_msa)
+
+
 def test_subset_size_respected_small_product():
     """Product smaller than subset_size → no crash, returns available seqs."""
     chain_a = ["AAAA"]
     chain_b = ["XXXX", "YYYY"]
     result = build_paired_msa([chain_a, chain_b], n_subsets=3, subset_size=100, top_k=2)
     assert set(result) <= {"AAAAXXXX", "AAAAYYYY"}
-
-
-import pathlib
-import tempfile
-from ghostfold.core.pipeline import write_multimer_pst_msa
 
 
 def test_write_multimer_pst_msa_no_gap_padded_rows():
@@ -90,6 +93,6 @@ def test_write_multimer_pst_msa_no_gap_padded_rows():
     )
 
     content = pathlib.Path(path).read_text()
-    lines = [l for l in content.splitlines() if not l.startswith(">") and not l.startswith("#")]
+    lines = [line for line in content.splitlines() if not line.startswith(">") and not line.startswith("#")]
     for seq in lines:
         assert "----" not in seq, f"Gap-padded row found: {seq!r}"

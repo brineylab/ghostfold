@@ -116,7 +116,7 @@ class TestWriteMultimerPstMsa:
         with open(path) as f:
             content = f.read()
         # No gap-padded rows in the new behavior
-        seq_lines = [l for l in content.splitlines() if l and not l.startswith(">") and not l.startswith("#")]
+        seq_lines = [line for line in content.splitlines() if line and not line.startswith(">") and not line.startswith("#")]
         for seq in seq_lines:
             assert "----" not in seq, f"Gap-padded row found: {seq!r}"
 
@@ -132,7 +132,7 @@ class TestWriteMultimerPstMsa:
         )
         with open(path) as f:
             content = f.read()
-        seq_lines = [l for l in content.splitlines() if l and not l.startswith(">") and not l.startswith("#")]
+        seq_lines = [line for line in content.splitlines() if line and not line.startswith(">") and not line.startswith("#")]
         for seq in seq_lines:
             assert "----" not in seq and "--" not in seq, f"Gap-padded row found: {seq!r}"
 

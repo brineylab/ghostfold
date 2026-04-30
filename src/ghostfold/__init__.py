@@ -3,11 +3,13 @@ from ghostfold.core.pipeline import run_pipeline
 from ghostfold.io.fasta import collect_fasta_paths, read_fasta_from_path
 from ghostfold.msa.mask import mask_a3m_file
 from ghostfold.msa.neff import calculate_neff, run_neff_calculation_in_parallel
+from ghostfold.msa.pairing import build_paired_msa
 from ghostfold.msa.ranking import rank_and_subsample
 from ghostfold.mutator import MSA_Mutator
 
 __all__ = [
     "__version__",
+    "build_paired_msa",
     "collect_fasta_paths",
     "read_fasta_from_path",
     "run_pipeline",
