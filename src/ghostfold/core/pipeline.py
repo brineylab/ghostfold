@@ -25,6 +25,7 @@ from ghostfold.io.fasta import write_fasta, create_project_dir, concatenate_fast
 from ghostfold.msa.filters import filter_sequences
 from ghostfold.viz.plotting import generate_optional_plots
 from ghostfold.msa.generation import generate_sequences_for_coverages_batched, generate_multimer_sequences
+from ghostfold.msa.pairing import build_paired_msa
 
 logger = get_logger("pipeline")
 
@@ -340,14 +341,8 @@ def write_multimer_pst_msa(
 ) -> None:
     """Write a multimer pseudoMSA file in ColabFold A3M/FASTA format.
 
-    For heterooligomers (#L1,L2,...\t1,1,...): concat sequences go in the
-    paired block; per-chain sequences go in gap-padded unpaired blocks.
-
-    For homooligomers (all chains identical): uses #L\tN format because
-    AF2-Multimer sets pair_msa_sequences=False for homomers and ignores the
-    paired block. Single-chain sequences are derived from the first-chain
-    portion of each concat sequence and written to the unpaired block, which
-    AF2-Multimer actually reads.
+    Paired block = concat_seqs + Cartesian-product paired sequences (no gap padding).
+    Both heterooligomer and homooligomer paths use this paired block.
     """
     clean_query = query_seq.replace(":", "")
     chain_queries: List[str] = []
@@ -358,18 +353,18 @@ def write_multimer_pst_msa(
 
     is_homooligomer = len(chain_lengths) > 1 and len(set(chain_queries)) == 1
 
+    paired_seqs = build_paired_msa(per_chain_seqs)
+
     with open(output_path, "w") as fh:
         if is_homooligomer:
             L = chain_lengths[0]
             N = len(chain_lengths)
             fh.write(f"#{L}\t{N}\n")
             fh.write(f">query\n{chain_queries[0]}\n")
-            # Derive single-chain sequences from first-chain portion of each concat seq
             for i, seq in enumerate(concat_seqs):
-                fh.write(f">concat_{i}\n{seq[:L]}\n")
-            # Per-chain sequences from first chain (identical for all chains in homooligomer)
-            for seq_idx, seq in enumerate(per_chain_seqs[0] if per_chain_seqs else []):
-                fh.write(f">per_chain_{seq_idx}\n{seq}\n")
+                fh.write(f">concat_{i}\n{seq}\n")
+            for i, seq in enumerate(paired_seqs):
+                fh.write(f">paired_{i}\n{seq}\n")
         else:
             lengths_str = ",".join(str(n) for n in chain_lengths)
             cardinality_str = ",".join("1" for _ in chain_lengths)
@@ -378,13 +373,8 @@ def write_multimer_pst_msa(
             fh.write(f">{chain_header}\n{clean_query}\n")
             for i, seq in enumerate(concat_seqs):
                 fh.write(f">concat_{i}\n{seq}\n")
-            for chain_idx, chain_seqs in enumerate(per_chain_seqs):
-                prefix = "-" * sum(chain_lengths[:chain_idx])
-                suffix = "-" * sum(chain_lengths[chain_idx + 1:])
-                # Always include the chain query sequence so unpaired_msa is never empty
-                fh.write(f">chain{chain_idx}_query\n{prefix}{chain_queries[chain_idx]}{suffix}\n")
-                for seq_idx, seq in enumerate(chain_seqs):
-                    fh.write(f">chain{chain_idx}_{seq_idx}\n{prefix}{seq}{suffix}\n")
+            for i, seq in enumerate(paired_seqs):
+                fh.write(f">paired_{i}\n{seq}\n")
 
 
 def process_multimer_run(

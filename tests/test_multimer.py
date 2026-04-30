@@ -103,7 +103,8 @@ class TestWriteMultimerPstMsa:
         assert "concat_0" in content
         assert "concat_1" in content
 
-    def test_chain_rows_gap_padded(self, tmp_path):
+    def test_chain_rows_no_gap_padded(self, tmp_path):
+        """New behavior: Cartesian-product paired seqs replace gap-padded rows."""
         path = str(tmp_path / "pstMSA.fasta")
         write_multimer_pst_msa(
             output_path=path,
@@ -114,12 +115,13 @@ class TestWriteMultimerPstMsa:
         )
         with open(path) as f:
             content = f.read()
-        # Chain 0 seq padded with 4 trailing gaps
-        assert "AAAC----" in content
-        # Chain 1 seq padded with 4 leading gaps
-        assert "----BBBX" in content
+        # No gap-padded rows in the new behavior
+        seq_lines = [l for l in content.splitlines() if l and not l.startswith(">") and not l.startswith("#")]
+        for seq in seq_lines:
+            assert "----" not in seq, f"Gap-padded row found: {seq!r}"
 
-    def test_three_chain_gap_padding(self, tmp_path):
+    def test_three_chain_no_gap_padding(self, tmp_path):
+        """New behavior: no gap-padded rows for three-chain heterooligomer."""
         path = str(tmp_path / "pstMSA.fasta")
         write_multimer_pst_msa(
             output_path=path,
@@ -130,9 +132,9 @@ class TestWriteMultimerPstMsa:
         )
         with open(path) as f:
             content = f.read()
-        assert "AX----" in content   # chain 0: no prefix, 4 gap suffix
-        assert "--BX--" in content   # chain 1: 2 gap prefix, 2 gap suffix
-        assert "----CX" in content   # chain 2: 4 gap prefix, no suffix
+        seq_lines = [l for l in content.splitlines() if l and not l.startswith(">") and not l.startswith("#")]
+        for seq in seq_lines:
+            assert "----" not in seq and "--" not in seq, f"Gap-padded row found: {seq!r}"
 
     def test_empty_concat_and_chain_seqs(self, tmp_path):
         path = str(tmp_path / "pstMSA.fasta")
@@ -145,8 +147,8 @@ class TestWriteMultimerPstMsa:
         )
         with open(path) as f:
             content = f.read()
-        # query record + 2 chain query records (always written for unpaired_msa)
-        assert content.count(">") == 3
+        # query record only (no concat, empty chains → build_paired_msa returns [])
+        assert content.count(">") == 1
 
     def test_homooligomer_uses_hash_L_N_format(self, tmp_path):
         path = str(tmp_path / "pstMSA.fasta")
@@ -165,19 +167,19 @@ class TestWriteMultimerPstMsa:
         assert lines[1].strip() == ">query"
         assert lines[2].strip() == "AAAA"
 
-    def test_homooligomer_concat_split_to_first_chain(self, tmp_path):
+    def test_homooligomer_concat_written_in_full(self, tmp_path):
+        """New behavior: concat seqs written in full (no splitting to first chain)."""
         path = str(tmp_path / "pstMSA.fasta")
         write_multimer_pst_msa(
             output_path=path,
             query_seq="AAAA:AAAA",
-            concat_seqs=["AAAABBBB"],  # first 4 = AAAA, second 4 = BBBB
+            concat_seqs=["AAAABBBB"],
             per_chain_seqs=[[], []],
             chain_lengths=[4, 4],
         )
         with open(path) as f:
             content = f.read()
-        assert "AAAA" in content   # first-chain portion of concat
-        assert "BBBB" not in content  # second-chain portion discarded
+        assert "AAAABBBB" in content  # full concat written as-is
 
     def test_heterooligomer_uses_comma_format(self, tmp_path):
         path = str(tmp_path / "pstMSA.fasta")

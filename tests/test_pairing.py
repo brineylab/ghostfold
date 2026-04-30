@@ -65,3 +65,31 @@ def test_subset_size_respected_small_product():
     chain_b = ["XXXX", "YYYY"]
     result = build_paired_msa([chain_a, chain_b], n_subsets=3, subset_size=100, top_k=2)
     assert set(result) <= {"AAAAXXXX", "AAAAYYYY"}
+
+
+import pathlib
+import tempfile
+from ghostfold.core.pipeline import write_multimer_pst_msa
+
+
+def test_write_multimer_pst_msa_no_gap_padded_rows():
+    concat_seqs = ["AAAABBBB", "CCCCDDDD"]
+    per_chain_seqs = [["AAAA", "CCCC"], ["BBBB", "DDDD"]]
+    chain_lengths = [4, 4]
+    query_seq = "AAAABBBB"
+
+    with tempfile.NamedTemporaryFile(mode="r", suffix=".a3m", delete=False) as f:
+        path = f.name
+
+    write_multimer_pst_msa(
+        output_path=path,
+        query_seq=query_seq,
+        concat_seqs=concat_seqs,
+        per_chain_seqs=per_chain_seqs,
+        chain_lengths=chain_lengths,
+    )
+
+    content = pathlib.Path(path).read_text()
+    lines = [l for l in content.splitlines() if not l.startswith(">") and not l.startswith("#")]
+    for seq in lines:
+        assert "----" not in seq, f"Gap-padded row found: {seq!r}"
