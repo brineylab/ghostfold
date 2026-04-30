@@ -213,7 +213,7 @@ __marimo__/
 
 # Misc
 localcolabfold/
-docs/
+# docs/
 preds/*
 AUDIT.md
 .worktrees/
