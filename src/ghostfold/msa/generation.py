@@ -238,7 +238,7 @@ def generate_multimer_sequences(
     device: Any,
     project_dir: str,
     inference_batch_size: int,
-    multimer_msa_mode: str = "concat+per_chain",
+    multimer_msa_mode: str = "concat",
 ) -> Tuple[List[str], List[List[str]]]:
     """Generate pseudoMSA sequences for a multimer complex.
 
