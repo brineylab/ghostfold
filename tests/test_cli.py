@@ -192,3 +192,29 @@ def test_msa_precision_invalid_rejected():
         "--precision", "fp32",
     ])
     assert result.exit_code != 0
+
+
+def test_multimer_msa_no_gap_padded_rows(tmp_path):
+    """Multimer .a3m output must contain no gap-padded unpaired rows."""
+    from ghostfold.core.pipeline import write_multimer_pst_msa
+
+    a3m_path = tmp_path / "complex.a3m"
+    write_multimer_pst_msa(
+        output_path=str(a3m_path),
+        query_seq="AAAA:BBBB",
+        concat_seqs=["AAAABBBB", "CCCCDDDD"],
+        per_chain_seqs=[["AAAA", "CCCC"], ["BBBB", "DDDD"]],
+        chain_lengths=[4, 4],
+    )
+
+    assert a3m_path.exists(), "No .a3m file produced"
+    content = a3m_path.read_text()
+    seq_lines = [
+        line for line in content.splitlines()
+        if line and not line.startswith(">") and not line.startswith("#")
+    ]
+    assert len(seq_lines) > 0, "No sequence lines in .a3m"
+    for seq in seq_lines:
+        assert "----" not in seq, (
+            f"Gap-padded row in {a3m_path.name}: {seq!r}"
+        )
