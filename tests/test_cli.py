@@ -194,8 +194,8 @@ def test_msa_precision_invalid_rejected():
     assert result.exit_code != 0
 
 
-def test_multimer_msa_no_gap_padded_rows(tmp_path):
-    """Multimer .a3m output must contain no gap-padded unpaired rows."""
+def test_multimer_msa_heterooligomer_format(tmp_path):
+    """Heterooligomer a3m: paired block uses tab-sep headers; per-chain gap-padded queries present."""
     from ghostfold.core.pipeline import write_multimer_pst_msa
 
     a3m_path = tmp_path / "complex.a3m"
@@ -208,13 +208,17 @@ def test_multimer_msa_no_gap_padded_rows(tmp_path):
     )
 
     assert a3m_path.exists(), "No .a3m file produced"
-    content = a3m_path.read_text()
-    seq_lines = [
-        line for line in content.splitlines()
-        if line and not line.startswith(">") and not line.startswith("#")
-    ]
+    lines = a3m_path.read_text().splitlines()
+
+    header_lines = [l for l in lines if l.startswith(">")]
+    seq_lines = [l for l in lines if l and not l.startswith(">") and not l.startswith("#")]
+
     assert len(seq_lines) > 0, "No sequence lines in .a3m"
-    for seq in seq_lines:
-        assert "----" not in seq, (
-            f"Gap-padded row in {a3m_path.name}: {seq!r}"
-        )
+
+    # Paired sequences must have tab-separated headers.
+    paired_headers = [l for l in header_lines if "\t" in l and not l.startswith(">chain")]
+    assert len(paired_headers) >= 1, "No tab-separated paired headers found"
+
+    # Per-chain gap-padded query entries must be present (unpaired_msa must not be empty).
+    chain_query_headers = [l for l in header_lines if l.startswith(">chain") and "query" in l]
+    assert len(chain_query_headers) == 2, f"Expected 2 chain query headers, got {chain_query_headers}"

@@ -103,8 +103,8 @@ class TestWriteMultimerPstMsa:
         assert "concat_0" in content
         assert "concat_1" in content
 
-    def test_chain_rows_no_gap_padded(self, tmp_path):
-        """New behavior: Cartesian-product paired seqs replace gap-padded rows."""
+    def test_chain_rows_paired_headers_and_chain_queries(self, tmp_path):
+        """Paired seqs have tab-sep headers; per-chain gap-padded queries always present."""
         path = str(tmp_path / "pstMSA.fasta")
         write_multimer_pst_msa(
             output_path=path,
@@ -113,15 +113,15 @@ class TestWriteMultimerPstMsa:
             per_chain_seqs=[["AAAC"], ["BBBX"]],
             chain_lengths=[4, 4],
         )
-        with open(path) as f:
-            content = f.read()
-        # No gap-padded rows in the new behavior
-        seq_lines = [line for line in content.splitlines() if line and not line.startswith(">") and not line.startswith("#")]
-        for seq in seq_lines:
-            assert "----" not in seq, f"Gap-padded row found: {seq!r}"
+        lines = open(path).read().splitlines()
+        header_lines = [l for l in lines if l.startswith(">")]
+        paired_headers = [l for l in header_lines if "\t" in l and not l.startswith(">chain")]
+        chain_query_headers = [l for l in header_lines if l.startswith(">chain") and "query" in l]
+        assert len(paired_headers) >= 1, "No tab-sep paired headers"
+        assert len(chain_query_headers) == 2, f"Expected 2 chain query entries, got {chain_query_headers}"
 
-    def test_three_chain_no_gap_padding(self, tmp_path):
-        """New behavior: no gap-padded rows for three-chain heterooligomer."""
+    def test_three_chain_paired_headers_and_chain_queries(self, tmp_path):
+        """Three-chain heterooligomer: paired block + per-chain gap-padded queries."""
         path = str(tmp_path / "pstMSA.fasta")
         write_multimer_pst_msa(
             output_path=path,
@@ -130,11 +130,10 @@ class TestWriteMultimerPstMsa:
             per_chain_seqs=[["AX"], ["BX"], ["CX"]],
             chain_lengths=[2, 2, 2],
         )
-        with open(path) as f:
-            content = f.read()
-        seq_lines = [line for line in content.splitlines() if line and not line.startswith(">") and not line.startswith("#")]
-        for seq in seq_lines:
-            assert "----" not in seq and "--" not in seq, f"Gap-padded row found: {seq!r}"
+        lines = open(path).read().splitlines()
+        header_lines = [l for l in lines if l.startswith(">")]
+        chain_query_headers = [l for l in header_lines if l.startswith(">chain") and "query" in l]
+        assert len(chain_query_headers) == 3, f"Expected 3 chain query entries, got {chain_query_headers}"
 
     def test_empty_concat_and_chain_seqs(self, tmp_path):
         path = str(tmp_path / "pstMSA.fasta")
@@ -147,8 +146,8 @@ class TestWriteMultimerPstMsa:
         )
         with open(path) as f:
             content = f.read()
-        # query record only (no concat, empty chains → build_paired_msa returns [])
-        assert content.count(">") == 1
+        # query + 2 chain_query entries (no concat, empty chains → build_paired_msa returns [])
+        assert content.count(">") == 3
 
     def test_homooligomer_uses_hash_L_N_format(self, tmp_path):
         path = str(tmp_path / "pstMSA.fasta")

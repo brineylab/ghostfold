@@ -79,6 +79,7 @@ def _msa_worker(
     recursive: bool = False,
     precision: str = "bf16",
     multimer_msa_mode: str = "concat+per_chain",
+    show_progress: bool = False,
 ) -> None:
     """Worker function that runs the MSA pipeline on a specific GPU.
 
@@ -90,9 +91,12 @@ def _msa_worker(
     import warnings
     warnings.filterwarnings("ignore", category=FutureWarning, module="transformers")
 
-    from ghostfold.core.logging import setup_worker_logging
-
-    setup_worker_logging(log_file_path)
+    if show_progress:
+        from ghostfold.core.logging import setup_logging
+        setup_logging(project_name)
+    else:
+        from ghostfold.core.logging import setup_worker_logging
+        setup_worker_logging(log_file_path)
 
     from ghostfold.core.config import load_config
     from ghostfold.core.pipeline import run_pipeline, DEFAULT_MUTATION_RATES_STR
@@ -111,7 +115,7 @@ def _msa_worker(
         plot_coevolution=False,
         num_runs=1,
         recursive=recursive,
-        show_progress=False,
+        show_progress=show_progress,
         precision=precision,
         multimer_msa_mode=multimer_msa_mode,
     )
@@ -151,7 +155,7 @@ def run_parallel_msa(
 
     if num_seqs == 1:
         logger.info("Only one sequence found. Running on a single GPU.")
-        _msa_worker(0, project_name, fasta_path, config_path, log_file_path or "", recursive=recursive, precision=precision, multimer_msa_mode=multimer_msa_mode)
+        _msa_worker(0, project_name, fasta_path, config_path, log_file_path or "", recursive=recursive, precision=precision, multimer_msa_mode=multimer_msa_mode, show_progress=True)
         # Free ProstT5 from VRAM so ColabFold (launched next) isn't starved.
         try:
             import torch

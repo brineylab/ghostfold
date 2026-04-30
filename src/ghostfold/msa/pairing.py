@@ -67,7 +67,7 @@ def build_paired_msa(
     scored = sorted(
         subsets,
         key=lambda s: calculate_neff(s, identity_threshold=neff_threshold),
-        reverse=True,
+        reverse=False,
     )
 
     merged: List[str] = []

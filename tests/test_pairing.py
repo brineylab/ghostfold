@@ -75,7 +75,8 @@ def test_subset_size_respected_small_product():
     assert set(result) <= {"AAAAXXXX", "AAAAYYYY"}
 
 
-def test_write_multimer_pst_msa_no_gap_padded_rows():
+def test_write_multimer_pst_msa_format():
+    """Paired block uses tab-sep headers; per-chain gap-padded queries always present."""
     concat_seqs = ["AAAABBBB", "CCCCDDDD"]
     per_chain_seqs = [["AAAA", "CCCC"], ["BBBB", "DDDD"]]
     chain_lengths = [4, 4]
@@ -92,7 +93,13 @@ def test_write_multimer_pst_msa_no_gap_padded_rows():
         chain_lengths=chain_lengths,
     )
 
-    content = pathlib.Path(path).read_text()
-    lines = [line for line in content.splitlines() if not line.startswith(">") and not line.startswith("#")]
-    for seq in lines:
-        assert "----" not in seq, f"Gap-padded row found: {seq!r}"
+    lines = pathlib.Path(path).read_text().splitlines()
+    header_lines = [l for l in lines if l.startswith(">")]
+
+    # Paired sequences have tab-separated headers.
+    paired_headers = [l for l in header_lines if "\t" in l and not l.startswith(">chain")]
+    assert len(paired_headers) >= 1, "No tab-separated paired headers"
+
+    # Per-chain gap-padded query entries must exist for unpaired_msa.
+    chain_query_headers = [l for l in header_lines if l.startswith(">chain") and "query" in l]
+    assert len(chain_query_headers) == 2, f"Expected 2 chain query entries, got {chain_query_headers}"

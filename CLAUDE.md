@@ -1,86 +1,207 @@
-# CLAUDE.md
+<agents>
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+  <overview>
+    This document defines how an agent should operate within the GhostFold repository. Instructions may be incomplete, ambiguous, or conflicting. The agent is expected to resolve conflicts using the priority rules below and proceed without blocking on perfect clarity.
+  </overview>
 
-## Project Structure
+  <priorities>
+    <rule order="1">Preserve correctness of scientific and computational results.</rule>
+    <rule order="2">Avoid breaking existing public APIs, CLI behavior, and test expectations.</rule>
+    <rule order="3">Minimize scope of changes; prefer local fixes over broad refactors.</rule>
+    <rule order="4">Keep behavior consistent with existing patterns in the codebase.</rule>
+    <rule order="5">Prefer clarity and maintainability over cleverness.</rule>
+  </priorities>
 
-GhostFold is a `src`-layout Python package. Core library code lives in `src/ghostfold/`, split by concern: `cli/` for Typer entrypoints, `core/` for pipeline and ColabFold integration, `msa/` for pseudoMSA generation and filtering, `io/` for FASTA handling, `viz/` for plots, and `mutator/` for mutation logic. Tests live in `tests/` and generally mirror module names (e.g. `tests/test_cli.py`, `tests/test_filters.py`). Runtime defaults are in `src/ghostfold/data/default_config.yaml`; helper scripts such as `scripts/install_localcolabfold.sh` support local setup.
-
-## Commands
-
-```bash
-pip install -e ".[dev]"          # editable install with pytest + ruff (Python 3.10+)
-pytest                            # full test suite
-pytest tests/test_cli.py -q      # focused test file
-ruff check src tests              # lint
-ghostfold --help                  # inspect CLI
-python -m ghostfold.cli.app --help  # alternative CLI inspection
-python -m build                   # build distributions
-```
-
-CI runs pytest on Python 3.10/3.11/3.12 with `--tb=short -q`.
-
-## Architecture
-
-GhostFold generates **synthetic MSAs from single sequences** (no database search) via ProstT5, then runs structure prediction through local ColabFold.
-
-### Pipeline flow
+  <fallbacks>
+    <case name="ambiguous_instruction">
+      Choose the interpretation that aligns with existing code patterns and tests.
+    </case>
 
 ```
-CLI (typer) → core/pipeline.py::run_pipeline()
-  → msa/generation.py   # ProstT5: AA→3Di→AA batched round-trip per coverage level
-  → msa/filters.py      # filter + vectorized dedup of generated sequences
-  → mutator/            # optional MSA evolution (BLOSUM62, PAM250, MEGABLAST matrices)
-  → viz/plotting.py     # coverage heatmaps, coevolution plots
-  → core/colabfold.py   # run local ColabFold on resulting .a3m files
+<case name="conflicting_instructions">
+  Follow the higher-priority rule from the <priorities> section. If priorities do not resolve the conflict, preserve existing behavior.
+</case>
+
+<case name="missing_context">
+  Infer intent from neighboring modules, tests, and naming conventions. Do not invent new abstractions unless absolutely necessary.
+</case>
+
+<case name="uncertain_change_scope">
+  Implement the smallest change that satisfies the requirement. Avoid speculative improvements.
+</case>
+
+<case name="performance_vs_correctness">
+  Default to correctness. Apply performance optimizations only if they do not change expected outputs.
+</case>
+
+<case name="test_failures">
+  Treat failing tests as ground truth unless clearly outdated. Fix code before modifying tests.
+</case>
 ```
 
-### Key modules
+  </fallbacks>
 
-| Path | Purpose |
-|------|---------|
-| `src/ghostfold/cli/app.py` | Typer app; subcommands: `msa`, `fold`, `run`, `mask`, `neff` |
-| `src/ghostfold/cli/fold.py` | `fold` subcommand; exposes `--num-models`, `--num-seeds`, `--num-recycles` |
-| `src/ghostfold/core/pipeline.py` | Top-level orchestration; module-level model cache keyed by `"{model}:{device}"` |
-| `src/ghostfold/msa/generation.py` | Batched ProstT5 inference; `generate_sequences_for_coverages_batched` batches all coverage levels into one GPU call per decode_conf |
-| `src/ghostfold/msa/model.py` | ProstT5 model loading (`Rostlab/ProstT5`) |
-| `src/ghostfold/msa/filters.py` | Sequence filtering; `deduplicate` uses vectorized Hamming identity (NumPy) |
-| `src/ghostfold/msa/neff.py` | Neff calculation; chunked vectorized pairwise identity (256-row blocks) to cap peak memory |
-| `src/ghostfold/core/colabfold.py` | Subprocess wrapper; `_build_colabfold_cmd` merges `extra_colabfold_params` into base params |
-| `src/ghostfold/core/colabfold_env.py` | Detects/sets up ColabFold (pixi or mamba) |
-| `src/ghostfold/core/config.py` | Loads/merges YAML config with CLI overrides |
-| `src/ghostfold/data/default_config.yaml` | Runtime defaults: `num_return_sequences`, `inference_batch_size`, decoding params |
-| `src/ghostfold/__init__.py` | Public API: `run_pipeline`, `read_fasta_from_path`, `mask_a3m_file`, etc. |
+<project_structure>
+GhostFold follows a src-layout Python package design.
 
-### Public API exports
+```
+<paths>
+  <core>src/ghostfold/</core>
+  <cli>src/ghostfold/cli/</cli>
+  <pipeline>src/ghostfold/core/</pipeline>
+  <msa>src/ghostfold/msa/</msa>
+  <io>src/ghostfold/io/</io>
+  <viz>src/ghostfold/viz/</viz>
+  <mutator>src/ghostfold/mutator/</mutator>
+  <tests>tests/</tests>
+  <config>src/ghostfold/data/default_config.yaml</config>
+  <scripts>scripts/</scripts>
+</paths>
 
-`run_pipeline`, `read_fasta_from_path`, `collect_fasta_paths`, `mask_a3m_file`, `calculate_neff`, `MSA_Mutator`
+Tests mirror module structure where possible.
+```
 
-## Coding Style & Naming Conventions
+</project_structure>
 
-4-space indent, type hints where useful, small focused modules. `snake_case` for functions/variables/modules; `PascalCase` for classes and test groupings like `TestMainApp`. Keep CLI command behavior in `src/ghostfold/cli/` and reusable logic in non-CLI modules. Run `ruff check src tests` before opening a PR.
+  <commands>
+    <install>pip install -e ".[dev]"</install>
+    <test_all>pytest</test_all>
+    <test_single>pytest tests/test_cli.py -q</test_single>
+    <lint>ruff check src tests</lint>
+    <cli_help>ghostfold --help</cli_help>
+    <cli_module>python -m ghostfold.cli.app --help</cli_module>
+    <build>python -m build</build>
+  </commands>
 
-## Testing Guidelines
+  <architecture>
+    <purpose>
+      Generate synthetic MSAs from single sequences using ProstT5, then perform structure prediction with local ColabFold.
+    </purpose>
 
-Pytest. Name new files `tests/test_<feature>.py`, new tests `test_<behavior>`. Prefer fast unit tests; use `typer.testing.CliRunner` for CLI behavior (see `tests/test_cli.py`). Cover new flags, config changes, and failure paths especially around ColabFold environment handling.
+```
+<pipeline_flow>
+  CLI → run_pipeline → msa generation → filtering → mutation (optional) → visualization → ColabFold execution
+</pipeline_flow>
 
-## Commit & Pull Request Guidelines
+<modules>
+  <module name="cli/app.py">CLI entrypoints (Typer)</module>
+  <module name="core/pipeline.py">Orchestration and caching</module>
+  <module name="msa/generation.py">Batched sequence generation</module>
+  <module name="msa/model.py">Model loading</module>
+  <module name="msa/filters.py">Filtering and deduplication</module>
+  <module name="msa/neff.py">Neff computation</module>
+  <module name="core/colabfold.py">ColabFold subprocess wrapper</module>
+  <module name="core/config.py">Config loading and merging</module>
+</modules>
+```
 
-Short imperative subjects (e.g. `fix CLI test failures in CI`). Keep commits focused. PRs need: concise summary, linked issue if applicable, test evidence (`pytest`, `ruff check`), sample CLI output for user-facing changes.
+  </architecture>
 
-## Performance Notes
+  <api>
+    <policy>
+      Public API stability is expected. Avoid renaming or removing exported functions without strong justification.
+    </policy>
 
-- **Batched MSA generation**: `generate_sequences_for_coverages_batched` replaces per-coverage sequential calls; all coverage chunks batched into one `generate` call per decode_conf for higher GPU utilization.
-- **Vectorized dedup**: `deduplicate` uses NumPy Hamming identity matrix; falls back to `SequenceMatcher` for unequal-length inputs.
-- **Chunked Neff**: `calculate_neff` computes pairwise identity in 256-row blocks to avoid OOM on large MSAs.
-- **Model precision**: bfloat16 on Ampere+ CUDA, float16 on older GPUs. `torch.compile(mode="reduce-overhead")` applied when available.
-- **OOM recovery**: `generate_sequences_for_coverages_batched` halves `inference_batch_size` on OOM and retries.
+```
+<functions>
+  run_pipeline, read_fasta_from_path, collect_fasta_paths, mask_a3m_file, calculate_neff, MSA_Mutator
+</functions>
+```
 
-## Notes
+  </api>
 
-- Structure prediction requires local ColabFold + CUDA PyTorch. Install via `scripts/install_localcolabfold.sh`.
-- Use `typer.testing.CliRunner` for CLI tests (see `tests/test_cli.py`).
-- `inference_batch_size` in config controls OOM behavior on large sequences.
-- Rich is used for all progress/logging output (`core/logging.py`).
-- Do not hardcode machine-specific paths or tokens; keep secrets out of the repo.
-- `fold` subcommand passes `--num-models`, `--num-seeds`, `--num-recycles` as `extra_colabfold_params` to `run_colabfold`; these override defaults in `COLABFOLD_PARAMS`.
+  <style>
+    <rules>
+      Use 4-space indentation.
+      Use snake_case for functions and variables.
+      Use PascalCase for classes.
+      Keep modules small and focused.
+      Add type hints where they clarify intent.
+    </rules>
+
+    <separation>
+      CLI logic stays in src/ghostfold/cli/. Core logic must not depend on CLI modules.
+    </separation>
+  </style>
+
+  <testing>
+    <framework>pytest</framework>
+
+```
+<policy>
+  Tests define expected behavior. Do not change tests to match incorrect implementations unless clearly justified.
+</policy>
+
+<guidelines>
+  Name files as test_<feature>.py.
+  Name tests as test_<behavior>.
+  Prefer fast unit tests.
+  Use typer.testing.CliRunner for CLI validation.
+</guidelines>
+```
+
+  </testing>
+
+  <contributions>
+    <commits>
+      Use short, imperative messages.
+      Keep commits focused on a single concern.
+    </commits>
+
+```
+<pull_requests>
+  Include summary, relevant context, test evidence, and CLI examples when applicable.
+</pull_requests>
+```
+
+  </contributions>
+
+  <performance>
+    <principle>
+      Performance improvements must not change observable outputs unless explicitly intended.
+    </principle>
+
+```
+<msa_generation>
+  Coverage levels are batched into a single generation call per decoding configuration.
+</msa_generation>
+
+<deduplication>
+  Uses NumPy-based Hamming identity; falls back for unequal lengths.
+</deduplication>
+
+<neff>
+  Pairwise identity computed in blocks to limit memory usage.
+</neff>
+
+<precision>
+  Uses bfloat16 or float16 depending on hardware.
+</precision>
+
+<oom>
+  Batch size is reduced and retried on failure.
+</oom>
+```
+
+  </performance>
+
+<runtime_notes> <requirements>
+Local ColabFold installation with CUDA-enabled PyTorch is required. </requirements>
+
+```
+<logging>
+  Rich is used for logging and progress display.
+</logging>
+
+<config>
+  inference_batch_size controls memory behavior.
+</config>
+
+<security>
+  Do not hardcode machine-specific paths, credentials, or tokens.
+</security>
+```
+
+</runtime_notes>
+
+</agents>

@@ -1,4 +1,9 @@
 import os
+import warnings
+os.environ.setdefault("HF_HUB_DISABLE_IMPLICIT_TOKEN", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+warnings.filterwarnings("ignore", message=".*unauthenticated.*", module="huggingface_hub")
+warnings.filterwarnings("ignore", message=".*HF_TOKEN.*", module="huggingface_hub")
 import importlib.util
 import itertools
 import json
@@ -18,6 +23,7 @@ from rich.progress import (
 )
 
 from transformers import T5Tokenizer, AutoModelForSeq2SeqLM
+import transformers.utils.logging as hf_logging
 
 from ghostfold.core.logging import get_console, get_logger
 from ghostfold.mutator import MSA_Mutator
@@ -87,38 +93,40 @@ def _load_model(
         )
 
     hf_token = os.environ.get("HF_TOKEN")
-    if not hf_token:
-        os.environ.setdefault("HF_HUB_DISABLE_IMPLICIT_TOKEN", "1")
-    tokenizer = T5Tokenizer.from_pretrained(model_name, do_lower_case=False, legacy=True, token=hf_token)
 
-    if precision in ("int8", "int4"):
-        from transformers import BitsAndBytesConfig
-        if precision == "int8":
-            bnb_config = BitsAndBytesConfig(load_in_8bit=True)
-        else:  # int4
-            bnb_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.bfloat16,
+    console = get_console()
+    hf_logging.disable_progress_bar()
+    with console.status(f"[bold cyan]Loading model weights ({model_name})…", spinner="dots"):
+        tokenizer = T5Tokenizer.from_pretrained(model_name, do_lower_case=False, legacy=True, token=hf_token)
+
+        if precision in ("int8", "int4"):
+            from transformers import BitsAndBytesConfig
+            if precision == "int8":
+                bnb_config = BitsAndBytesConfig(load_in_8bit=True)
+            else:  # int4
+                bnb_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_compute_dtype=torch.bfloat16,
+                )
+            model = AutoModelForSeq2SeqLM.from_pretrained(
+                model_name,
+                quantization_config=bnb_config,
+                attn_implementation=attn_impl,
+                device_map="auto",
+                token=hf_token,
             )
-        model = AutoModelForSeq2SeqLM.from_pretrained(
-            model_name,
-            quantization_config=bnb_config,
-            attn_implementation=attn_impl,
-            device_map="auto",
-            token=hf_token,
-        )
-        logger.info(f"Model loaded with {precision} quantization (bitsandbytes).")
-        logger.debug("torch.compile skipped for quantized models (bitsandbytes incompatibility).")
-    else:
-        dtype = torch.bfloat16 if precision == "bf16" else torch.float16
-        model = AutoModelForSeq2SeqLM.from_pretrained(
-            model_name,
-            dtype=dtype,
-            attn_implementation=attn_impl,
-            token=hf_token,
-        ).to(device)
-        logger.info(f"Model loaded with {precision} precision.")
+            logger.info(f"Model loaded with {precision} quantization (bitsandbytes).")
+            logger.debug("torch.compile skipped for quantized models (bitsandbytes incompatibility).")
+        else:
+            dtype = torch.bfloat16 if precision == "bf16" else torch.float16
+            model = AutoModelForSeq2SeqLM.from_pretrained(
+                model_name,
+                dtype=dtype,
+                attn_implementation=attn_impl,
+                token=hf_token,
+            ).to(device)
+            logger.info(f"Model loaded with {precision} precision.")
         try:
             import torch._dynamo
             torch._dynamo.config.suppress_errors = True
@@ -369,12 +377,21 @@ def write_multimer_pst_msa(
             lengths_str = ",".join(str(n) for n in chain_lengths)
             cardinality_str = ",".join("1" for _ in chain_lengths)
             chain_header = "\t".join(str(i + 1) for i in range(len(chain_lengths)))
+            n_chains = len(chain_lengths)
             fh.write(f"#{lengths_str}\t{cardinality_str}\n")
             fh.write(f">{chain_header}\n{clean_query}\n")
+            # Paired block: tab-separated headers so ColabFold assigns to all chains.
             for i, seq in enumerate(concat_seqs):
-                fh.write(f">concat_{i}\n{seq}\n")
+                tab_name = "\t".join(f"concat_{i}" for _ in range(n_chains))
+                fh.write(f">{tab_name}\n{seq}\n")
             for i, seq in enumerate(paired_seqs):
-                fh.write(f">paired_{i}\n{seq}\n")
+                tab_name = "\t".join(f"paired_{i}" for _ in range(n_chains))
+                fh.write(f">{tab_name}\n{seq}\n")
+            # Unpaired block: gap-padded per-chain query so unpaired_msa is never empty.
+            for chain_idx, chain_query in enumerate(chain_queries):
+                prefix = "-" * sum(chain_lengths[:chain_idx])
+                suffix = "-" * sum(chain_lengths[chain_idx + 1:])
+                fh.write(f">chain{chain_idx}_query\n{prefix}{chain_query}{suffix}\n")
 
 
 def process_multimer_run(
@@ -517,7 +534,6 @@ def run_pipeline(
     multimer_msa_mode: str = "concat+per_chain",
 ) -> None:
     """Runs the pseudoMSA generation pipeline with OOM handling for model loading."""
-    import warnings
     warnings.filterwarnings("ignore", category=FutureWarning, module="transformers")
 
     import torch
